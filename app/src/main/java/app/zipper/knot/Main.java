@@ -155,6 +155,9 @@ public class Main extends XposedModule {
       if (options.useCustomFont.enabled) {
         applyHook(new FontUnlockHook(), lpparam);
       }
+      if (options.extendTheme.enabled) {
+        applyHook(new ThemeExtendHook(), lpparam);
+      }
       if (options.useAmoledTheme.enabled) {
         applyHook(new AmoledThemeHook(), lpparam);
       }
