@@ -1,8 +1,5 @@
 package app.zipper.knot.hooks;
 
-import android.content.Context;
-import android.content.res.ColorStateList;
-import android.content.res.Resources;
 import android.graphics.Color;
 import android.util.DisplayMetrics;
 import app.zipper.knot.Knot;
@@ -12,115 +9,38 @@ import app.zipper.knot.LoadParam;
 import app.zipper.knot.Main;
 import app.zipper.knot.Reflect;
 import app.zipper.knot.SettingsStore;
-import io.github.libxposed.api.XposedInterface.Hooker;
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
-import java.util.HashMap;
+import java.util.Collections;
+import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import org.json.JSONObject;
 
 public class ThemeExtendHook implements BaseHook {
 
-  private static final int[] NO_COLOR = new int[0];
-  private static final Map<Integer, int[]> RES_ID_CACHE = new ConcurrentHashMap<>();
+  private static final String TAG = "Knot: ThemeExtend";
   private static volatile Palette palette;
-
-  private static final String[][] ALIASES = {
-    {"home.service", "background", "main.view.common", "background", "list.common", "background"},
-    {"home.service", "loading.icon", "list.common", "loading.icon", "list.common", "action.icon"},
-    {"wallet.header", "background", "friendlist.header", "background", "main.view.common", "background"},
-    {"wallet.header", "title.text", "list.common", "name.text", "friendlist.item", "nameText"},
-    {"wallet.main", "icon", "list.common", "action.icon", "list.common", "loading.icon"},
-    {"wallet.main", "text", "list.common", "name.text", "friendlist.item", "nameText"},
-    {"wallet.common", "background", "main.view.common", "background", "list.common", "background"},
-    {"wallet.common", "divider.background", "list.common", "divider.background", "list.common", "separator.background"},
-    {"wallet.common", "outline.background", "list.common", "divider.background", "list.common", "separator.background"},
-    {"wallet.common", "service.outline.background", "list.common", "divider.background", "list.common", "separator.background"},
-    {"wallet.common", "service.divider.background", "list.common", "divider.background", "list.common", "separator.background"},
-    {"wallet.common", "area.divider.background", "list.common", "divider.background", "list.common", "separator.background"},
-    {"wallet.common", "separator.background", "list.common", "separator.background", "list.common", "divider.background"},
-    {"wallet.common", "status.separator.background", "list.common", "separator.background", "list.common", "divider.background"},
-    {"wallet.common", "title.text", "list.common", "name.text", "friendlist.item", "nameText"},
-    {"wallet.common", "text", "list.common", "name.text", "friendlist.item", "nameText"},
-    {"wallet.common", "name.text", "list.common", "name.text", "friendlist.item", "nameText"},
-    {"wallet.common", "point.text", "list.common", "name.text", "friendlist.item", "nameText"},
-    {"wallet.common", "value.text", "list.common", "name.text", "friendlist.item", "nameText"},
-    {"wallet.common", "button.text", "list.common", "simpleButton.text", "list.common", "name.text"},
-    {"wallet.common", "tab.button.selected.text", "list.common", "name.text", "friendlist.item", "nameText"},
-    {"wallet.common", "sub.text", "list.common", "description.text", "friendlist.item", "statusText"},
-    {"wallet.common", "more.text", "list.common", "description.text", "friendlist.item", "statusText"},
-    {"wallet.common", "info.text", "list.common", "description.text", "friendlist.item", "statusText"},
-    {"wallet.common", "guide.text", "list.common", "description.text", "friendlist.item", "statusText"},
-    {"wallet.common", "hide.text", "list.common", "description.text", "friendlist.item", "statusText"},
-    {"wallet.common", "description.text", "list.common", "description.text", "friendlist.item", "statusText"},
-    {"wallet.common", "status.text", "list.common", "description.text", "friendlist.item", "statusText"},
-    {"wallet.common", "limited.text", "list.common", "description.text", "friendlist.item", "statusText"},
-    {"wallet.common", "category.more.text", "list.common", "description.text", "friendlist.item", "statusText"},
-    {"wallet.common", "category.tab.text", "list.common", "name.text", "friendlist.item", "nameText"},
-    {"wallet.common", "tab.button.text", "list.common", "description.text", "friendlist.item", "statusText"},
-    {"wallet.common", "loading.icon", "list.common", "loading.icon", "list.common", "action.icon"},
-    {"wallet.common", "blank.icon", "list.common", "action.icon", "list.common", "loading.icon"},
-    {"wallet.common", "info.icon", "list.common", "action.icon", "list.common", "arrow.icon"},
-    {"wallet.common", "failed.icon", "list.common", "action.icon", "list.common", "loading.icon"},
-    {"wallet.common", "option.icon", "list.common", "action.icon", "list.common", "arrow.icon"},
-    {"wallet.common", "display.icon", "list.common", "action.icon", "list.common", "loading.icon"},
-    {"wallet.common", "service.icon", "list.common", "action.icon", "list.common", "loading.icon"},
-    {"wallet.common", "category.icon", "list.common", "action.icon", "list.common", "loading.icon"},
-    {"wallet.common", "newDotIcon", "list.common", "action.icon", "list.common", "loading.icon"},
-    {"wallet.common", "tab.button.newDotIcon", "list.common", "action.icon", "list.common", "loading.icon"},
-    {"wallet.common", "arrow", "list.common", "arrow.icon", "list.common", "action.icon"},
-    {"wallet.common", "category.arrow", "list.common", "arrow.icon", "list.common", "action.icon"},
-    {"wallet.common", "sub.arrow", "list.common", "arrow.icon", "list.common", "action.icon"},
-    {"wallet.common", "third.arrow", "list.common", "arrow.icon", "list.common", "action.icon"},
-    {"wallet.common", "reload.icon", "list.common", "loading.icon", "list.common", "action.icon"},
-    {"wallet.common", "summary.reload.icon", "list.common", "loading.icon", "list.common", "action.icon"},
-    {"wallet.common", "reload.outline", "list.common", "simpleButton.outline", "list.common", "divider.background"},
-    {"wallet.common", "summary.reload.outline", "list.common", "simpleButton.outline", "list.common", "divider.background"},
-    {"wallet.common", "button.background", "list.common", "simpleButton.background", "list.common", "background"},
-    {"wallet.common", "button.outline", "list.common", "simpleButton.outline", "list.common", "divider.background"},
-    {"wallet.common", "button.unselected.background", "list.common", "simpleButton.background", "list.common", "background"},
-    {"wallet.common", "tab.button.selected.background", "list.common", "simpleButton.background", "list.common", "background"},
-    {"wallet.common", "tab.button.outline", "list.common", "simpleButton.outline", "list.common", "divider.background"},
-    {"wallet.common", "status.background", "list.common", "simpleButton.background", "list.common", "background"},
-    {"wallet.common", "reload.background", "list.common", "simpleButton.background", "list.common", "background"},
-    {"wallet.common", "summary.background", "list.common", "background", "main.view.common", "background"},
-    {"wallet.common", "selectorBar.background", "list.common", "background", "main.view.common", "background"},
-    {"wallet.sub", "officialAccount.text", "list.common", "name.text", "friendlist.item", "nameText"},
-    {"wallet.sub", "price.text", "list.common", "name.text", "friendlist.item", "nameText"},
-    {"wallet.sub", "point.text", "list.common", "name.text", "friendlist.item", "nameText"},
-    {"wallet.sub", "coin.text", "list.common", "name.text", "friendlist.item", "nameText"},
-    {"wallet.sub", "ad.action.text", "list.common", "name.text", "friendlist.item", "nameText"},
-    {"wallet.sub", "ad.subtext", "list.common", "description.text", "friendlist.item", "statusText"},
-    {"wallet.sub", "ad.action.icon", "list.common", "action.icon", "list.common", "arrow.icon"},
-    {"wallet.sub", "ad.dot.icon", "list.common", "action.icon", "list.common", "loading.icon"},
-    {"wallet.sub", "add.icon", "list.common", "action.icon", "list.common", "loading.icon"},
-    {"wallet.sub", "expand.icon", "list.common", "expand.icon", "list.common", "arrow.icon"},
-    {"wallet.sub", "expand.outline", "list.common", "expand.icon.outline", "list.common", "divider.background"},
-    {"wallet.sub", "ad.button.background", "list.common", "simpleButton.background", "list.common", "background"},
-    {"wallet.sub", "ad.button.outline", "list.common", "simpleButton.outline", "list.common", "divider.background"},
-    {"wallet.sub", "ad.button.text", "list.common", "simpleButton.text", "list.common", "name.text"},
-    {"wallet.sub", "simple.button.background", "list.common", "simpleButton.background", "list.common", "background"},
-    {"wallet.sub", "simple.button.outline", "list.common", "simpleButton.outline", "list.common", "divider.background"},
-    {"wallet.sub", "simple.button.text", "list.common", "simpleButton.text", "list.common", "name.text"},
-    {"wallet.sub", "simple.button.icon", "list.common", "action.icon", "list.common", "loading.icon"}
-  };
 
   @Override
   public void hook(KnotConfig config, LoadParam lpparam) throws Throwable {
     if (!config.extendTheme.enabled || config.useAmoledTheme.enabled) return;
 
-    Context context = SettingsStore.getContext();
-    String versionName = LineVersion.getVersionName(context);
+    String versionName = LineVersion.getVersionName(SettingsStore.getContext());
     ThemeExtendVersion.Config version = ThemeExtendVersion.resolve(versionName);
     if (version == null) {
-      Knot.log("Knot: ThemeExtend: unsupported LINE version " + versionName);
+      Knot.log(TAG + ": unsupported LINE version " + versionName);
       return;
     }
 
     installThemeParser(version, lpparam);
-    installSemanticColorFallback();
-    Knot.log("Knot: ThemeExtend: installed for LINE " + versionName);
+    SemanticColorBridge.install(
+        ThemeExtendHook::enabled,
+        token -> {
+          Palette current = palette;
+          return current == null ? null : current.resolveResource(token);
+        },
+        TAG,
+        true);
+    Knot.log(TAG + ": installed semantic resource bridge for LINE " + versionName);
   }
 
   private static void installThemeParser(ThemeExtendVersion.Config version, LoadParam lpparam) {
@@ -132,124 +52,49 @@ public class ThemeExtendHook implements BaseHook {
             String.class,
             version.parserConfigClass,
             DisplayMetrics.class);
-    Class<?> keyClass = Reflect.findClass(version.keyClass, lpparam.classLoader);
-    Constructor<?> keyConstructor =
-        Reflect.findConstructorExact(keyClass, String.class, String.class);
 
     Knot.module
         .hook(parser)
         .intercept(
             chain -> {
               Object result = chain.proceed();
-              if (!Main.options.extendTheme.enabled || Main.options.useAmoledTheme.enabled) {
-                return result;
-              }
-              if (!(result instanceof Map)) return result;
+              if (!enabled()) return result;
 
-              String json = (String) chain.getArg(0);
-              Palette parsed = parsePalette(json);
+              Palette parsed = parsePalette((String) chain.getArg(0));
               if (parsed != null) {
                 palette = parsed;
-                RES_ID_CACHE.clear();
-              }
-
-              Map<Object, Object> extended = new HashMap<>((Map<?, ?>) result);
-              int aliases = extendAliases(extended, keyConstructor);
-              if (parsed != null || aliases > 0) {
+                SemanticColorBridge.resetProbe(TAG);
                 Knot.log(
-                    "Knot: ThemeExtend: updated theme bridge aliases="
-                        + aliases
-                        + " semantic="
-                        + (parsed != null));
+                    TAG
+                        + ": palette semantic="
+                        + parsed.semantic.size()
+                        + " background="
+                        + hex(parsed.background)
+                        + " mainText="
+                        + hex(parsed.mainText)
+                        + " subText="
+                        + hex(parsed.messageText)
+                        + " divider="
+                        + hex(parsed.divider)
+                        + " icon="
+                        + hex(parsed.icon));
               }
-              return extended;
+              return result;
             });
   }
 
-  private static int extendAliases(Map<Object, Object> map, Constructor<?> keyConstructor) {
-    int count = 0;
-    for (String[] alias : ALIASES) {
-      if (putAlias(map, keyConstructor, alias)) count++;
-    }
-    return count;
-  }
-
-  private static boolean putAlias(
-      Map<Object, Object> map, Constructor<?> keyConstructor, String[] alias) {
-    try {
-      Object target = keyConstructor.newInstance(alias[0], alias[1]);
-      if (map.containsKey(target)) return false;
-      for (int i = 2; i + 1 < alias.length; i += 2) {
-        Object source = keyConstructor.newInstance(alias[i], alias[i + 1]);
-        Object style = map.get(source);
-        if (style != null) {
-          map.put(target, style);
-          return true;
-        }
-      }
-    } catch (Throwable t) {
-      Knot.log("Knot: ThemeExtend: alias failed: " + t);
-    }
-    return false;
-  }
-
-  private static void installSemanticColorFallback() {
-    Hooker colorHook =
-        chain -> {
-          if (Main.options.extendTheme.enabled && !Main.options.useAmoledTheme.enabled) {
-            Integer color =
-                resolveSemanticColor((Resources) chain.getThisObject(), (Integer) chain.getArg(0));
-            if (color != null) return color;
-          }
-          return chain.proceed();
-        };
-    Hooker colorStateListHook =
-        chain -> {
-          if (Main.options.extendTheme.enabled && !Main.options.useAmoledTheme.enabled) {
-            Integer color =
-                resolveSemanticColor((Resources) chain.getThisObject(), (Integer) chain.getArg(0));
-            if (color != null) return ColorStateList.valueOf(color);
-          }
-          return chain.proceed();
-        };
-
-    Knot.module
-        .hook(Reflect.findMethodExact(Resources.class, "getColor", int.class))
-        .intercept(colorHook);
-    Knot.module
-        .hook(
-            Reflect.findMethodExact(Resources.class, "getColor", int.class, Resources.Theme.class))
-        .intercept(colorHook);
-    Knot.module
-        .hook(Reflect.findMethodExact(Resources.class, "getColorStateList", int.class))
-        .intercept(colorStateListHook);
-    Knot.module
-        .hook(
-            Reflect.findMethodExact(
-                Resources.class, "getColorStateList", int.class, Resources.Theme.class))
-        .intercept(colorStateListHook);
-  }
-
-  private static Integer resolveSemanticColor(Resources resources, int id) {
-    int[] cached = RES_ID_CACHE.get(id);
-    if (cached != null) return cached.length == 0 ? null : cached[0];
-
-    Integer color = null;
-    Palette current = palette;
-    if (current != null) {
-      try {
-        color = current.resolve(resources.getResourceEntryName(id));
-      } catch (Throwable ignored) {
-      }
-    }
-    RES_ID_CACHE.put(id, color == null ? NO_COLOR : new int[] {color});
-    return color;
+  private static boolean enabled() {
+    return Main.options.extendTheme.enabled && !Main.options.useAmoledTheme.enabled;
   }
 
   private static Palette parsePalette(String json) {
     if (json == null || json.isEmpty()) return null;
     try {
       JSONObject root = new JSONObject(json);
+      Map<String, Integer> semantic =
+          SemanticColorBridge.parseThemeSemantic(root, Collections.emptySet());
+      if (semantic == null) semantic = Collections.emptyMap();
+
       Integer background =
           firstColor(
               root,
@@ -268,7 +113,15 @@ public class ThemeExtendHook implements BaseHook {
               "name.text.color",
               "friendlist.item",
               "nameText.color");
-      if (background == null && mainText == null) return null;
+
+      if (background == null) {
+        background = firstSemantic(semantic, "primaryBackground", "basicBackground", "background");
+      }
+      if (mainText == null) mainText = firstSemantic(semantic, "primaryText", "basicText");
+      if (background == null && mainText == null && semantic.isEmpty()) return null;
+
+      if (background == null) background = Color.BLACK;
+      if (mainText == null) mainText = Color.WHITE;
 
       Integer dimmedText =
           firstColor(
@@ -304,41 +157,82 @@ public class ThemeExtendHook implements BaseHook {
               "list_highlightText",
               "friendlist.item",
               "recommended.link.text.color");
-      Integer missedCallText =
+      Integer divider =
           firstColor(
               root,
-              "theme.variable",
-              "list_missedCall_text",
-              "theme.variable",
-              "destructiveButton_background");
+              "list.common",
+              "divider.background.color",
+              "list.common",
+              "separator.background.color",
+              "friendlist.item",
+              "contents.outline.color");
+      Integer icon =
+          firstColor(
+              root,
+              "list.common",
+              "action.icon.color",
+              "list.common",
+              "arrow.icon.color",
+              "friendlist.item",
+              "home.icon.color");
       Integer destructiveBackground =
           firstColor(root, "theme.variable", "destructiveButton_background");
       Integer destructiveText = firstColor(root, "theme.variable", "destructiveButton_text");
 
-      if (mainText == null) mainText = Color.WHITE;
+      if (messageText == null) {
+        messageText = firstSemantic(semantic, "secondaryText", "tertiaryText", "primarySubText");
+      }
+      if (dimmedText == null) {
+        dimmedText = firstSemantic(semantic, "tertiaryText", "quaternaryText", "placeholderText");
+      }
+      if (timeText == null) {
+        timeText = firstSemantic(semantic, "quaternaryText", "quinaryText", "secondarySubText");
+      }
+      if (highlightText == null) {
+        highlightText = firstSemantic(semantic, "primaryLink", "primaryAccentText", "accentText");
+      }
+      if (divider == null) {
+        divider = firstSemantic(semantic, "primarySeparator", "secondarySeparator", "primaryBorder");
+      }
+      if (icon == null) icon = firstSemantic(semantic, "primaryIcon", "secondaryIcon");
+      if (destructiveBackground == null) {
+        destructiveBackground = firstSemantic(semantic, "prominentFill", "prominentText");
+      }
+      if (destructiveText == null) destructiveText = firstSemantic(semantic, "onProminentFill");
+
       if (messageText == null) messageText = mainText;
       if (dimmedText == null) dimmedText = messageText;
       if (timeText == null) timeText = dimmedText;
       if (highlightText == null) highlightText = mainText;
-      if (missedCallText == null) missedCallText = destructiveBackground;
-      if (missedCallText == null) missedCallText = highlightText;
-      if (destructiveBackground == null) destructiveBackground = missedCallText;
+      if (divider == null) divider = mix(background, mainText, 0.14f);
+      if (icon == null) icon = mainText;
+      if (destructiveBackground == null) destructiveBackground = highlightText;
       if (destructiveText == null) destructiveText = mainText;
 
       return new Palette(
+          semantic,
           background,
           mainText,
           dimmedText,
           messageText,
           timeText,
           highlightText,
-          missedCallText,
+          divider,
+          icon,
           destructiveBackground,
           destructiveText);
     } catch (Throwable t) {
-      Knot.log("Knot: ThemeExtend: palette parse failed: " + t);
+      Knot.log(TAG + ": palette parse failed: " + t);
       return null;
     }
+  }
+
+  private static Integer firstSemantic(Map<String, Integer> semantic, String... keys) {
+    for (String key : keys) {
+      Integer color = semantic.get(key);
+      if (color != null) return color;
+    }
+    return null;
   }
 
   private static Integer firstColor(JSONObject root, String... sectionKeyPairs) {
@@ -373,91 +267,127 @@ public class ThemeExtendHook implements BaseHook {
     }
   }
 
-  private static int withAlpha(int color, int percent) {
-    int alpha = Math.max(0, Math.min(255, Math.round(255f * percent / 100f)));
-    return Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color));
+  private static int mix(int background, int foreground, float amount) {
+    float a = Math.max(0f, Math.min(1f, amount));
+    return Color.argb(
+        Math.round(Color.alpha(background) + (Color.alpha(foreground) - Color.alpha(background)) * a),
+        Math.round(Color.red(background) + (Color.red(foreground) - Color.red(background)) * a),
+        Math.round(Color.green(background) + (Color.green(foreground) - Color.green(background)) * a),
+        Math.round(Color.blue(background) + (Color.blue(foreground) - Color.blue(background)) * a));
+  }
+
+  private static String normalize(String name) {
+    if (name == null) return "";
+    return name.toLowerCase(Locale.ROOT).replace("_", "").replace("-", "");
+  }
+
+  private static String hex(Integer color) {
+    return color == null ? "null" : String.format(Locale.ROOT, "#%08X", color);
   }
 
   private static final class Palette {
-    final Integer background;
+    final Map<String, Integer> semantic;
+    final int background;
     final int mainText;
     final int dimmedText;
     final int messageText;
     final int timeText;
     final int highlightText;
-    final int missedCallText;
+    final int divider;
+    final int icon;
     final int destructiveBackground;
     final int destructiveText;
 
     Palette(
-        Integer background,
+        Map<String, Integer> semantic,
+        int background,
         int mainText,
         int dimmedText,
         int messageText,
         int timeText,
         int highlightText,
-        int missedCallText,
+        int divider,
+        int icon,
         int destructiveBackground,
         int destructiveText) {
+      this.semantic = semantic;
       this.background = background;
       this.mainText = mainText;
       this.dimmedText = dimmedText;
       this.messageText = messageText;
       this.timeText = timeText;
       this.highlightText = highlightText;
-      this.missedCallText = missedCallText;
+      this.divider = divider;
+      this.icon = icon;
       this.destructiveBackground = destructiveBackground;
       this.destructiveText = destructiveText;
     }
 
-    Integer resolve(String resourceName) {
-      if (resourceName == null || resourceName.isEmpty()) return null;
+    Integer resolveResource(String resourceName) {
+      Integer exact = semantic.get(resourceName);
+      if (exact != null) return exact;
 
-      String name = resourceName;
-      int alpha = -1;
-      int split = name.lastIndexOf("_alpha");
-      if (split > 0 && split + 6 < name.length()) {
-        try {
-          alpha = Integer.parseInt(name.substring(split + 6));
-          name = name.substring(0, split);
-        } catch (NumberFormatException ignored) {
-        }
-      }
+      String name = normalize(resourceName);
+      if (name.isEmpty()) return null;
 
-      Integer color = resolveBase(name);
-      if (color == null) return null;
-      return alpha >= 0 ? withAlpha(color, alpha) : color;
-    }
-
-    private Integer resolveBase(String name) {
-      if (name.endsWith("Link")) return highlightText;
-      if ("prominentText".equals(name)) return missedCallText;
-      if ("prominentFill".equals(name) || "secondaryProminentFill".equals(name)) {
+      if (name.contains("onprominent")) return destructiveText;
+      if (name.contains("prominenttext") || name.contains("prominentfill")) {
         return destructiveBackground;
       }
-      if ("onProminentFill".equals(name) || "onSecondaryProminentFill".equals(name)) {
-        return destructiveText;
+      if (name.contains("destructive")
+          || name.contains("danger")
+          || name.contains("negative")
+          || name.contains("error")) {
+        return destructiveBackground;
       }
-      if (name.contains("AccentText")) {
-        return name.startsWith("primary") ? mainText : highlightText;
-      }
-      if (name.contains("PlaceholderText")) return dimmedText;
-      if (!name.endsWith("Text")) return null;
 
-      if (name.startsWith("quinary")
-          || name.startsWith("septenary")
-          || name.startsWith("denary")
-          || name.contains("NeutralText")) {
-        return timeText;
+      if (name.contains("text")) {
+        if (name.contains("link") || name.contains("accent") || name.contains("highlight")) {
+          return highlightText;
+        }
+        if (name.contains("placeholder") || name.contains("dimmed")) return dimmedText;
+        if (name.contains("time") || name.contains("quinary") || name.contains("septenary")) {
+          return timeText;
+        }
+        if (name.contains("secondary")
+            || name.contains("tertiary")
+            || name.contains("quaternary")
+            || name.contains("sub")
+            || name.contains("caption")
+            || name.contains("description")) {
+          return messageText;
+        }
+        return mainText;
       }
-      if (name.startsWith("secondary")
-          || name.startsWith("tertiary")
-          || name.startsWith("quaternary")
-          || name.startsWith("octonary")
-          || name.startsWith("senaryAlt")) {
-        return messageText;
+
+      if (name.contains("icon") || name.contains("arrow") || name.contains("chevron")) {
+        if (name.contains("accent") || name.contains("selected") || name.contains("highlight")) {
+          return highlightText;
+        }
+        if (name.contains("secondary") || name.contains("tertiary") || name.contains("sub")) {
+          return messageText;
+        }
+        return icon;
       }
-      return mainText;
+
+      if (name.contains("separator")
+          || name.contains("divider")
+          || name.contains("border")
+          || name.contains("outline")) {
+        return divider;
+      }
+
+      if (name.contains("accentfill") || name.contains("highlightfill")) return highlightText;
+      if (name.contains("neutralfill") || name.endsWith("fill") || name.contains("surface")) {
+        if (name.contains("primary")) return mix(background, mainText, 0.10f);
+        if (name.contains("secondary")) return mix(background, mainText, 0.08f);
+        if (name.contains("tertiary")) return mix(background, mainText, 0.06f);
+        if (name.contains("quaternary")) return mix(background, mainText, 0.04f);
+        return mix(background, mainText, 0.07f);
+      }
+
+      if (name.contains("background") || name.contains("container")) return background;
+      return null;
     }
   }
 }
