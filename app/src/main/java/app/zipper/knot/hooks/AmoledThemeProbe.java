@@ -21,6 +21,9 @@ final class AmoledThemeProbe {
 
   private static final String INPUT_PASS_ACTIVITY =
       "com.linecorp.line.passlock.InputPassActivity";
+  private static final String[] PASSCODE_BACKGROUND_VIEWS = {
+    "passcode_bg", "passcode_top", "passcode_fake_status_bar"
+  };
   private static final Set<String> logged = Collections.synchronizedSet(new HashSet<>());
 
   private AmoledThemeProbe() {}
@@ -67,38 +70,43 @@ final class AmoledThemeProbe {
     try {
       Resources res = activity.getResources();
       String pkg = activity.getPackageName();
-      int rootId = res.getIdentifier("passcode_bg", "id", pkg);
       int primaryBackgroundId = res.getIdentifier("primaryBackground", "color", pkg);
-      View root = rootId == 0 ? null : activity.findViewById(rootId);
-      Drawable originalRootBackground = root == null ? null : root.getBackground();
       Integer routedPrimaryBackground =
           primaryBackgroundId == 0
               ? null
               : res.getColor(primaryBackgroundId, activity.getTheme());
-      if (root != null && routedPrimaryBackground != null) {
-        root.setBackgroundColor(routedPrimaryBackground);
-      }
-      Drawable appliedRootBackground = root == null ? null : root.getBackground();
       int uiNight = res.getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
 
-      logOnce(
-          tag
-              + ": ThemeProbe passcode phase="
-              + phase
-              + " activity="
-              + activity.getClass().getName()
-              + " uiNight="
-              + uiNight
-              + " rootId="
-              + hex(rootId)
-              + " originalRootBackground="
-              + describeDrawable(originalRootBackground)
-              + " primaryBackgroundId="
-              + hex(primaryBackgroundId)
-              + " routedPrimaryBackground="
-              + colorHex(routedPrimaryBackground)
-              + " appliedRootBackground="
-              + describeDrawable(appliedRootBackground));
+      for (String entryName : PASSCODE_BACKGROUND_VIEWS) {
+        int id = res.getIdentifier(entryName, "id", pkg);
+        View view = id == 0 ? null : activity.findViewById(id);
+        Drawable originalBackground = view == null ? null : view.getBackground();
+        if (view != null && routedPrimaryBackground != null) {
+          view.setBackgroundColor(routedPrimaryBackground);
+        }
+        Drawable appliedBackground = view == null ? null : view.getBackground();
+
+        logOnce(
+            tag
+                + ": ThemeProbe passcode phase="
+                + phase
+                + " activity="
+                + activity.getClass().getName()
+                + " uiNight="
+                + uiNight
+                + " view="
+                + entryName
+                + " id="
+                + hex(id)
+                + " originalBackground="
+                + describeDrawable(originalBackground)
+                + " primaryBackgroundId="
+                + hex(primaryBackgroundId)
+                + " routedPrimaryBackground="
+                + colorHex(routedPrimaryBackground)
+                + " appliedBackground="
+                + describeDrawable(appliedBackground));
+      }
     } catch (Throwable t) {
       Knot.log(tag + ": ThemeProbe passcode state failed: " + t);
     }
