@@ -18,12 +18,13 @@ final class MiniColorBridge26110 {
     Integer resolve(String token);
   }
 
-  private static final String MINI_ACTIVITY =
-      "com.linecorp.line.mini.home.impl.list.MiniAppHomeListActivity";
+  private static final String MINI_ROOT_CLASS = "com.linecorp.line.mini.home.impl.list.b";
+  private static final String MINI_STATE_CLASS = "com.linecorp.line.mini.home.impl.list.i";
+  private static final String COMPOSER_CLASS = "h3.t";
   private static final Set<String> LOGGED = ConcurrentHashMap.newKeySet();
   private static final Set<String> UNMAPPED = ConcurrentHashMap.newKeySet();
+  private static final ThreadLocal<Integer> MINI_DEPTH = ThreadLocal.withInitial(() -> 0);
   private static volatile boolean installed;
-  private static volatile boolean miniActive;
 
   private MiniColorBridge26110() {}
 
@@ -38,7 +39,7 @@ final class MiniColorBridge26110 {
         .hook(colorResource)
         .intercept(
             chain -> {
-              if (!active.getAsBoolean()) return chain.proceed();
+              if (!active.getAsBoolean() || !isMiniActive()) return chain.proceed();
 
               int id = (Integer) chain.getArg(0);
               String token = resourceEntryName(id);
@@ -70,13 +71,13 @@ final class MiniColorBridge26110 {
               return toComposeColor(color);
             });
 
-    installMiniLifecycle(lpparam, tag);
+    installMiniCompositionScope(lpparam, tag);
     installed = true;
     Knot.log(tag + ": installed LINE 26.11.0 Mini Compose color bridge");
   }
 
   static boolean isMiniActive() {
-    return miniActive;
+    return MINI_DEPTH.get() > 0;
   }
 
   static void resetProbe() {
@@ -84,29 +85,42 @@ final class MiniColorBridge26110 {
     UNMAPPED.clear();
   }
 
-  private static void installMiniLifecycle(LoadParam lpparam, String tag) {
+  private static void installMiniCompositionScope(LoadParam lpparam, String tag) {
     try {
-      Method onResume = Reflect.findMethodExact(MINI_ACTIVITY, lpparam.classLoader, "onResume");
+      Class<?> rootClass = Reflect.findClass(MINI_ROOT_CLASS, lpparam.classLoader);
+      Method root = null;
+      for (Method method : rootClass.getDeclaredMethods()) {
+        if (!"a".equals(method.getName())) continue;
+        Class<?>[] params = method.getParameterTypes();
+        if (params.length != 13) continue;
+        if (!MINI_STATE_CLASS.equals(params[0].getName())) continue;
+        if (!COMPOSER_CLASS.equals(params[10].getName())) continue;
+        if (params[11] != int.class || params[12] != int.class) continue;
+        root = method;
+        break;
+      }
+      if (root == null) {
+        Knot.log(tag + ": Mini root composable not found");
+        return;
+      }
+      root.setAccessible(true);
       Knot.module
-          .hook(onResume)
+          .hook(root)
           .intercept(
               chain -> {
-                Object result = chain.proceed();
-                miniActive = true;
-                Knot.log(tag + ": Mini theme override active");
-                return result;
+                int previous = MINI_DEPTH.get();
+                MINI_DEPTH.set(previous + 1);
+                if (previous == 0) Knot.log(tag + ": Mini composition theme override active");
+                try {
+                  return chain.proceed();
+                } finally {
+                  if (previous == 0) MINI_DEPTH.remove();
+                  else MINI_DEPTH.set(previous);
+                }
               });
-
-      Method onPause = Reflect.findMethodExact(MINI_ACTIVITY, lpparam.classLoader, "onPause");
-      Knot.module
-          .hook(onPause)
-          .intercept(
-              chain -> {
-                miniActive = false;
-                return chain.proceed();
-              });
+      Knot.log(tag + ": installed Mini root composable scope");
     } catch (Throwable t) {
-      Knot.log(tag + ": Mini lifecycle probe install failed: " + t);
+      Knot.log(tag + ": Mini composable scope install failed: " + t);
     }
   }
 
