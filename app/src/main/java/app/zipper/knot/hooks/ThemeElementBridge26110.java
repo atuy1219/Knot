@@ -30,6 +30,7 @@ final class ThemeElementBridge26110 {
 
   private static final Set<String> LOGGED = ConcurrentHashMap.newKeySet();
   private static final Set<String> UNMAPPED = ConcurrentHashMap.newKeySet();
+  private static final Set<String> MINI_OVERRIDDEN = ConcurrentHashMap.newKeySet();
   private static volatile boolean installed;
 
   private ThemeElementBridge26110() {}
@@ -78,9 +79,12 @@ final class ThemeElementBridge26110 {
               Set requested = (Set) setArg;
               @SuppressWarnings("rawtypes")
               Map extended = null;
+              boolean miniOverride = MiniColorBridge26110.isMiniActive();
 
               for (Object key : requested) {
-                if (key == null || !keyClass.isInstance(key) || source.containsKey(key)) continue;
+                if (key == null || !keyClass.isInstance(key)) continue;
+                boolean exists = source.containsKey(key);
+                if (exists && !miniOverride) continue;
 
                 try {
                   String component = (String) Reflect.getObjectField(key, "a");
@@ -90,18 +94,31 @@ final class ThemeElementBridge26110 {
                   String identity = identity(component, element);
 
                   if (color == null || slot == null) {
-                    if (UNMAPPED.size() < 160 && UNMAPPED.add(identity)) {
+                    if (!exists && UNMAPPED.size() < 160 && UNMAPPED.add(identity)) {
                       Knot.log(tag + ": unmapped theme element " + identity);
                     }
                     continue;
                   }
 
                   Object themeValue =
-                      createThemeValue(colorConstructor, valueConstructor, color, slot);
+                      miniOverride
+                          ? createMiniThemeValue(colorConstructor, valueConstructor, color)
+                          : createThemeValue(colorConstructor, valueConstructor, color, slot);
                   if (extended == null) extended = new LinkedHashMap(source);
                   extended.put(key, themeValue);
 
-                  if (LOGGED.add(identity)) {
+                  if (miniOverride) {
+                    if (MINI_OVERRIDDEN.add(identity)) {
+                      Knot.log(
+                          tag
+                              + ": Mini theme element override "
+                              + identity
+                              + " ["
+                              + slot.name().toLowerCase(Locale.ROOT)
+                              + "] -> "
+                              + String.format(Locale.ROOT, "#%08X", color));
+                    }
+                  } else if (LOGGED.add(identity)) {
                     Knot.log(
                         tag
                             + ": theme element "
@@ -131,6 +148,7 @@ final class ThemeElementBridge26110 {
   static void resetProbe() {
     LOGGED.clear();
     UNMAPPED.clear();
+    MINI_OVERRIDDEN.clear();
     MiniColorBridge26110.resetProbe();
   }
 
@@ -163,6 +181,20 @@ final class ThemeElementBridge26110 {
         break;
     }
     return valueConstructor.newInstance(args);
+  }
+
+  private static Object createMiniThemeValue(
+      Constructor<?> colorConstructor, Constructor<?> valueConstructor, int color) throws Throwable {
+    Object colorValue = colorConstructor.newInstance(ColorStateList.valueOf(color));
+    return valueConstructor.newInstance(
+        null,
+        colorValue,
+        colorValue,
+        null,
+        colorValue,
+        colorValue,
+        colorValue,
+        colorValue);
   }
 
   private static ColorSlot resolveSlot(String element) {
