@@ -1,0 +1,35 @@
+name: Final Dark Theme Build
+
+on:
+  pull_request:
+    branches:
+      - agent/final-dark-theme-build-base
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact dark-theme-logic-fix head
+        uses: actions/checkout@v4
+        with:
+          ref: 6aeca7f868a7a50d488df600ccdd6a325daae07a
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle 9.7.0
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.7.0'
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Knot-dark-theme-logic-fix-6aeca7f
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
