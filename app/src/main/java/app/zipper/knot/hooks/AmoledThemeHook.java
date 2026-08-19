@@ -50,6 +50,13 @@ public class AmoledThemeHook implements BaseHook {
   private static final String SEMANTIC_SUFFIX = ".background.color";
   private static final int[] NO_COLOR = new int[0];
 
+  private static final String INPUT_PASS_ACTIVITY =
+      "com.linecorp.line.passlock.InputPassActivity";
+  private static final String PRIMARY_BACKGROUND = "primaryBackground";
+  private static final String[] PASSCODE_BACKGROUND_VIEWS = {
+    "passcode_bg", "passcode_top", "passcode_fake_status_bar"
+  };
+
   private static final Set<String> SEMANTIC_SKIP_TOKENS =
       Collections.unmodifiableSet(new HashSet<>(Arrays.asList("primaryFill")));
 
@@ -104,6 +111,7 @@ public class AmoledThemeHook implements BaseHook {
     installNavigationBarBlackening();
     NightModePin.install(lpparam, () -> Main.options.useAmoledTheme.enabled, "Knot: AmoledTheme");
     installThemeSemanticColors();
+    installPasscodeBackgroundOverride(lpparam);
   }
 
   private void installThemeSemanticColors() {
@@ -160,6 +168,45 @@ public class AmoledThemeHook implements BaseHook {
     }
     resIdCache.put(id, color == null ? NO_COLOR : new int[] {color});
     return color;
+  }
+
+  private void installPasscodeBackgroundOverride(LoadParam lpparam) {
+    try {
+      Class<?> inputPassActivity = Reflect.findClass(INPUT_PASS_ACTIVITY, lpparam.classLoader);
+      Knot.module
+          .hook(Reflect.findMethodExact(inputPassActivity, "onStart"))
+          .intercept(
+              chain -> {
+                Object result = chain.proceed();
+                if (Main.options.useAmoledTheme.enabled) {
+                  applyPasscodeBackground((android.app.Activity) chain.getThisObject());
+                }
+                return result;
+              });
+    } catch (Throwable t) {
+      Knot.log("Knot: AmoledTheme: passcode background unavailable: " + t);
+    }
+  }
+
+  private static void applyPasscodeBackground(android.app.Activity activity) {
+    try {
+      Resources res = activity.getResources();
+      String pkg = activity.getPackageName();
+      int primaryBackgroundId = res.getIdentifier(PRIMARY_BACKGROUND, "color", pkg);
+      if (primaryBackgroundId == 0) return;
+
+      Integer color = resolve(res, primaryBackgroundId);
+      if (color == null) return;
+
+      for (String name : PASSCODE_BACKGROUND_VIEWS) {
+        int id = res.getIdentifier(name, "id", pkg);
+        if (id == 0) continue;
+        android.view.View view = activity.findViewById(id);
+        if (view != null) view.setBackgroundColor(color);
+      }
+    } catch (Throwable t) {
+      Knot.log("Knot: AmoledTheme: passcode background failed: " + t);
+    }
   }
 
   private void installNavigationBarBlackening() {
