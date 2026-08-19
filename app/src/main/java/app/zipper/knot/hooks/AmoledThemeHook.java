@@ -50,8 +50,7 @@ public class AmoledThemeHook implements BaseHook {
   private static final String SEMANTIC_SUFFIX = ".background.color";
   private static final int[] NO_COLOR = new int[0];
 
-  private static final String INPUT_PASS_ACTIVITY =
-      "com.linecorp.line.passlock.InputPassActivity";
+  private static final String INPUT_PASS_ACTIVITY = "com.linecorp.line.passlock.InputPassActivity";
   private static final String PRIMARY_BACKGROUND = "primaryBackground";
   private static final String[] PASSCODE_BACKGROUND_VIEWS = {
     "passcode_bg", "passcode_top", "passcode_fake_status_bar"
@@ -324,9 +323,7 @@ public class AmoledThemeHook implements BaseHook {
 
                 File requested = (File) chain.getThisObject();
                 String name = requested.getName();
-                if (name == null
-                    || !name.startsWith("gnb_bottom_ic_")
-                    || !name.endsWith(".png")) {
+                if (name == null || !name.startsWith("gnb_bottom_ic_") || !name.endsWith(".png")) {
                   return original;
                 }
 
@@ -339,11 +336,7 @@ public class AmoledThemeHook implements BaseHook {
                     new File(new File(new File(ctx.getCacheDir(), CACHE_SUBDIR), "images"), name);
                 if (cached.length() <= 0L) return original;
 
-                Knot.log(
-                    "Knot: AmoledTheme: BottomNav File.exists "
-                        + requested
-                        + " -> "
-                        + cached);
+                Knot.log("Knot: AmoledTheme: BottomNav File.exists " + requested + " -> " + cached);
                 return Boolean.TRUE;
               });
       Knot.log("Knot: AmoledTheme: BottomNav File.exists bridge installed");
