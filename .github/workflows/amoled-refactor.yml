@@ -1,0 +1,170 @@
+name: AMOLED Refactor
+
+on:
+  pull_request:
+    branches:
+      - agent/amoled-refactor-base
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout fix branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 9.7.0
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.7.0'
+
+      - name: Refine AMOLED hooks
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          PASS_ACTIVITY = 'com.linecorp.line.passlock.InputPassActivity'
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              return text.replace(old, new, 1)
+
+          line_version = Path('app/src/main/java/app/zipper/knot/LineVersion.java')
+          text = line_version.read_text()
+          if 'public String inputPassActivityClass = "";' not in text:
+              text = replace_once(
+                  text,
+                  '      public String fieldSystemDarkMode = "";\n      public String darkThemeManagerClass = "";',
+                  '      public String fieldSystemDarkMode = "";\n      public String inputPassActivityClass = "";\n      public String darkThemeManagerClass = "";',
+                  'LineVersion.NightMode')
+              line_version.write_text(text)
+
+          amoled = Path('app/src/main/java/app/zipper/knot/hooks/AmoledThemeHook.java')
+          text = amoled.read_text()
+          if 'import android.app.Activity;' not in text:
+              text = replace_once(
+                  text,
+                  'import android.content.Context;\n',
+                  'import android.app.Activity;\nimport android.content.Context;\n',
+                  'Activity import')
+          if 'import android.os.Build;' not in text:
+              text = replace_once(
+                  text,
+                  'import android.graphics.Color;\n',
+                  'import android.graphics.Color;\nimport android.os.Build;\nimport android.view.View;\nimport android.view.Window;\n',
+                  'Android UI imports')
+          text = text.replace(
+              '  private static final String INPUT_PASS_ACTIVITY = "com.linecorp.line.passlock.InputPassActivity";\n',
+              '')
+          text = text.replace(
+              '    NightModePin.install(lpparam, () -> Main.options.useAmoledTheme.enabled, "Knot: AmoledTheme");\n',
+              '    installNightModePin(lpparam);\n')
+
+          marker = '  private void installThemeSemanticColors() {\n'
+          helper = '''  private void installNightModePin(LoadParam lpparam) {\n    try {\n      NightModePin.install(\n          lpparam, () -> Main.options.useAmoledTheme.enabled, "Knot: AmoledTheme");\n    } catch (Throwable t) {\n      Knot.log("Knot: AmoledTheme: night mode pin failed: " + t);\n    }\n  }\n\n'''
+          if helper not in text:
+              text = replace_once(text, marker, helper + marker, 'night mode helper')
+
+          old_passcode = '''  private void installPasscodeBackgroundOverride(LoadParam lpparam) {\n    try {\n      Class<?> inputPassActivity = Reflect.findClass(INPUT_PASS_ACTIVITY, lpparam.classLoader);\n      Knot.module\n          .hook(Reflect.findMethodExact(inputPassActivity, "onStart"))\n          .intercept(\n              chain -> {\n                Object result = chain.proceed();\n                if (Main.options.useAmoledTheme.enabled) {\n                  applyPasscodeBackground((android.app.Activity) chain.getThisObject());\n                }\n                return result;\n              });\n    } catch (Throwable t) {\n      Knot.log("Knot: AmoledTheme: passcode background unavailable: " + t);\n    }\n  }\n\n  private static void applyPasscodeBackground(android.app.Activity activity) {\n'''
+          new_passcode = '''  private void installPasscodeBackgroundOverride(LoadParam lpparam) {\n    LineVersion.Config cfg = LineVersion.get();\n    if (cfg == null || cfg.nightMode.inputPassActivityClass.isEmpty()) return;\n\n    try {\n      Class<?> inputPassActivity =\n          Reflect.findClass(cfg.nightMode.inputPassActivityClass, lpparam.classLoader);\n      Knot.module\n          .hook(Reflect.findMethodExact(inputPassActivity, "onStart"))\n          .intercept(\n              chain -> {\n                Object result = chain.proceed();\n                if (Main.options.useAmoledTheme.enabled) {\n                  applyPasscodeBackground((Activity) chain.getThisObject());\n                }\n                return result;\n              });\n    } catch (Throwable t) {\n      Knot.log("Knot: AmoledTheme: passcode background unavailable: " + t);\n    }\n  }\n\n  private static void applyPasscodeBackground(Activity activity) {\n'''
+          if old_passcode in text:
+              text = replace_once(text, old_passcode, new_passcode, 'passcode config routing')
+          elif 'cfg.nightMode.inputPassActivityClass' not in text:
+              raise SystemExit('passcode config routing: expected old or new implementation')
+
+          text = text.replace('        android.view.View view = activity.findViewById(id);',
+                              '        View view = activity.findViewById(id);')
+          text = text.replace('Reflect.findMethodExact(android.app.Activity.class, "onResume")',
+                              'Reflect.findMethodExact(Activity.class, "onResume")')
+          text = text.replace('                  android.view.Window w =',
+                              '                  Window w =')
+          text = text.replace('                      ((android.app.Activity) chain.getThisObject()).getWindow();',
+                              '                      ((Activity) chain.getThisObject()).getWindow();')
+          text = text.replace('android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q',
+                              'Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q')
+          amoled.write_text(text)
+
+          version_paths = [
+              'app/src/main/java/app/zipper/knot/versions/Version2680.java',
+              'app/src/main/java/app/zipper/knot/versions/Version2690.java',
+              'app/src/main/java/app/zipper/knot/versions/Version26100.java',
+              'app/src/main/java/app/zipper/knot/versions/Version26101.java',
+              'app/src/main/java/app/zipper/knot/versions/Version26110.java',
+          ]
+          for path_str in version_paths:
+              path = Path(path_str)
+              text = path.read_text()
+              setting = f'    v.nightMode.inputPassActivityClass = "{PASS_ACTIVITY}";\n'
+              if setting not in text:
+                  text = replace_once(
+                      text,
+                      '    v.nightMode.fieldSystemDarkMode = "a";\n',
+                      '    v.nightMode.fieldSystemDarkMode = "a";\n' + setting,
+                      path.name)
+                  path.write_text(text)
+          PY
+
+      - name: Apply repository formatting
+        run: gradle :app:spotlessApply --stacktrace
+
+      - name: Verify change scope
+        shell: bash
+        run: |
+          python - <<'PY'
+          import subprocess
+          allowed = {
+              'app/src/main/java/app/zipper/knot/LineVersion.java',
+              'app/src/main/java/app/zipper/knot/hooks/AmoledThemeHook.java',
+              'app/src/main/java/app/zipper/knot/versions/Version2680.java',
+              'app/src/main/java/app/zipper/knot/versions/Version2690.java',
+              'app/src/main/java/app/zipper/knot/versions/Version26100.java',
+              'app/src/main/java/app/zipper/knot/versions/Version26101.java',
+              'app/src/main/java/app/zipper/knot/versions/Version26110.java',
+          }
+          changed = set(subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines())
+          unexpected = changed - allowed
+          if unexpected:
+              raise SystemExit('Unexpected modified files: ' + ', '.join(sorted(unexpected)))
+          print('Changed files:', ', '.join(sorted(changed)))
+          PY
+          git diff --check
+
+      - name: Check formatting
+        run: gradle spotlessCheck --stacktrace
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Commit and push fix branch
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git config user.name 'Atuy'
+          git config user.email '130917473+atuy1219@users.noreply.github.com'
+          git add app/src/main/java/app/zipper/knot/LineVersion.java \
+                  app/src/main/java/app/zipper/knot/hooks/AmoledThemeHook.java \
+                  app/src/main/java/app/zipper/knot/versions/Version2680.java \
+                  app/src/main/java/app/zipper/knot/versions/Version2690.java \
+                  app/src/main/java/app/zipper/knot/versions/Version26100.java \
+                  app/src/main/java/app/zipper/knot/versions/Version26101.java \
+                  app/src/main/java/app/zipper/knot/versions/Version26110.java
+          git commit -m 'AMOLEDテーマフックの責務を整理'
+          git push origin HEAD:dark-theme-logic-fix
