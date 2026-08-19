@@ -40,6 +40,10 @@ public class ThemeExtendHook implements BaseHook {
         },
         TAG,
         true);
+    if (versionName.startsWith("26.11.0")) {
+      ThemeElementBridge26110.install(
+          ThemeExtendHook::enabled, ThemeExtendHook::resolveThemeElementColor, lpparam, TAG);
+    }
     Knot.log(TAG + ": installed semantic resource bridge for LINE " + versionName);
   }
 
@@ -64,6 +68,7 @@ public class ThemeExtendHook implements BaseHook {
               if (parsed != null) {
                 palette = parsed;
                 SemanticColorBridge.resetProbe(TAG);
+                ThemeElementBridge26110.resetProbe();
                 Knot.log(
                     TAG
                         + ": palette semantic="
@@ -85,6 +90,27 @@ public class ThemeExtendHook implements BaseHook {
 
   private static boolean enabled() {
     return Main.options.extendTheme.enabled && !Main.options.useAmoledTheme.enabled;
+  }
+
+  private static Integer resolveThemeElementColor(String component, String element) {
+    Palette current = palette;
+    if (current == null) return null;
+
+    Integer exact = element == null ? null : current.semantic.get(element);
+    if (exact != null) return exact;
+
+    String elementName = normalize(element);
+    if (elementName.contains("sub2")
+        || elementName.contains("placeholder")
+        || elementName.contains("hint")) {
+      return current.dimmedText;
+    }
+
+    String combined =
+        (component == null ? "" : component) + "." + (element == null ? "" : element);
+    Integer contextual = current.resolveResource(combined);
+    if (contextual != null) return contextual;
+    return current.resolveResource(element);
   }
 
   private static Palette parsePalette(String json) {
