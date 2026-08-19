@@ -57,24 +57,28 @@ final class AmoledThemeProbe {
             chain -> {
               Object result = chain.proceed();
               if (active.getAsBoolean()) {
-                logPasscodeState((Activity) chain.getThisObject(), phase, tag);
+                applyAndLogPasscodeState((Activity) chain.getThisObject(), phase, tag);
               }
               return result;
             });
   }
 
-  private static void logPasscodeState(Activity activity, String phase, String tag) {
+  private static void applyAndLogPasscodeState(Activity activity, String phase, String tag) {
     try {
       Resources res = activity.getResources();
       String pkg = activity.getPackageName();
       int rootId = res.getIdentifier("passcode_bg", "id", pkg);
       int primaryBackgroundId = res.getIdentifier("primaryBackground", "color", pkg);
       View root = rootId == 0 ? null : activity.findViewById(rootId);
-      Drawable rootBackground = root == null ? null : root.getBackground();
+      Drawable originalRootBackground = root == null ? null : root.getBackground();
       Integer routedPrimaryBackground =
           primaryBackgroundId == 0
               ? null
               : res.getColor(primaryBackgroundId, activity.getTheme());
+      if (root != null && routedPrimaryBackground != null) {
+        root.setBackgroundColor(routedPrimaryBackground);
+      }
+      Drawable appliedRootBackground = root == null ? null : root.getBackground();
       int uiNight = res.getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
 
       logOnce(
@@ -87,12 +91,14 @@ final class AmoledThemeProbe {
               + uiNight
               + " rootId="
               + hex(rootId)
-              + " rootBackground="
-              + describeDrawable(rootBackground)
+              + " originalRootBackground="
+              + describeDrawable(originalRootBackground)
               + " primaryBackgroundId="
               + hex(primaryBackgroundId)
               + " routedPrimaryBackground="
-              + colorHex(routedPrimaryBackground));
+              + colorHex(routedPrimaryBackground)
+              + " appliedRootBackground="
+              + describeDrawable(appliedRootBackground));
     } catch (Throwable t) {
       Knot.log(tag + ": ThemeProbe passcode state failed: " + t);
     }
