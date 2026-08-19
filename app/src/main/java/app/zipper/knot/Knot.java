@@ -17,6 +17,9 @@ public final class Knot {
   private Knot() {}
 
   public static void log(String msg) {
+    if (msg != null && (msg.contains("ThemeProbe") || msg.contains("BottomNav"))) {
+      Log.i("KnotThemeProbe", msg);
+    }
     XposedInterface m = module;
     if (m != null) {
       m.log(Log.INFO, TAG, msg);

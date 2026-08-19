@@ -17,6 +17,9 @@ final class NightModePin {
     if (cfg == null) return;
 
     installDarkThemePredicates(cfg, lpparam, active, tag);
+    if ("Knot: AmoledTheme".equals(tag)) {
+      AmoledThemeProbe.install(cfg, lpparam, active, tag);
+    }
 
     if (cfg.nightMode.nightModeConfiguratorClass.isEmpty()
         || cfg.nightMode.methodApplyNightMode.isEmpty()) {
