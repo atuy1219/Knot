@@ -122,6 +122,8 @@ final class ThemeElementBridge26110 {
               return chain.proceed(args);
             });
 
+    MiniColorBridge26110.install(active, token -> resolver.resolve(null, token), lpparam, tag);
+
     installed = true;
     Knot.log(tag + ": installed LINE 26.11.0 ThemeManager element bridge");
   }
@@ -129,6 +131,7 @@ final class ThemeElementBridge26110 {
   static void resetProbe() {
     LOGGED.clear();
     UNMAPPED.clear();
+    MiniColorBridge26110.resetProbe();
   }
 
   private static Object createThemeValue(
