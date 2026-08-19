@@ -18,9 +18,12 @@ final class MiniColorBridge26110 {
     Integer resolve(String token);
   }
 
+  private static final String MINI_ACTIVITY =
+      "com.linecorp.line.mini.home.impl.list.MiniAppHomeListActivity";
   private static final Set<String> LOGGED = ConcurrentHashMap.newKeySet();
   private static final Set<String> UNMAPPED = ConcurrentHashMap.newKeySet();
   private static volatile boolean installed;
+  private static volatile boolean miniActive;
 
   private MiniColorBridge26110() {}
 
@@ -67,13 +70,44 @@ final class MiniColorBridge26110 {
               return toComposeColor(color);
             });
 
+    installMiniLifecycle(lpparam, tag);
     installed = true;
     Knot.log(tag + ": installed LINE 26.11.0 Mini Compose color bridge");
+  }
+
+  static boolean isMiniActive() {
+    return miniActive;
   }
 
   static void resetProbe() {
     LOGGED.clear();
     UNMAPPED.clear();
+  }
+
+  private static void installMiniLifecycle(LoadParam lpparam, String tag) {
+    try {
+      Method onResume = Reflect.findMethodExact(MINI_ACTIVITY, lpparam.classLoader, "onResume");
+      Knot.module
+          .hook(onResume)
+          .intercept(
+              chain -> {
+                Object result = chain.proceed();
+                miniActive = true;
+                Knot.log(tag + ": Mini theme override active");
+                return result;
+              });
+
+      Method onPause = Reflect.findMethodExact(MINI_ACTIVITY, lpparam.classLoader, "onPause");
+      Knot.module
+          .hook(onPause)
+          .intercept(
+              chain -> {
+                miniActive = false;
+                return chain.proceed();
+              });
+    } catch (Throwable t) {
+      Knot.log(tag + ": Mini lifecycle probe install failed: " + t);
+    }
   }
 
   private static String resourceEntryName(int id) {
