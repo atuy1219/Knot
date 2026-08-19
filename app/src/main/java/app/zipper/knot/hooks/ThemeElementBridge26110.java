@@ -100,10 +100,20 @@ final class ThemeElementBridge26110 {
                     continue;
                   }
 
-                  Object themeValue =
-                      miniOverride
-                          ? createMiniThemeValue(colorConstructor, valueConstructor, color)
-                          : createThemeValue(colorConstructor, valueConstructor, color, slot);
+                  Object themeValue;
+                  if (miniOverride && exists) {
+                    themeValue =
+                        overrideThemeValue(
+                            source.get(key),
+                            valueClass,
+                            colorConstructor,
+                            valueConstructor,
+                            color,
+                            slot);
+                  } else {
+                    themeValue = createThemeValue(colorConstructor, valueConstructor, color, slot);
+                  }
+
                   if (extended == null) extended = new LinkedHashMap(source);
                   extended.put(key, themeValue);
 
@@ -160,6 +170,33 @@ final class ThemeElementBridge26110 {
       throws Throwable {
     Object colorValue = colorConstructor.newInstance(ColorStateList.valueOf(color));
     Object[] args = new Object[8];
+    putColorSlot(args, colorValue, slot);
+    return valueConstructor.newInstance(args);
+  }
+
+  private static Object overrideThemeValue(
+      Object existing,
+      Class<?> valueClass,
+      Constructor<?> colorConstructor,
+      Constructor<?> valueConstructor,
+      int color,
+      ColorSlot slot)
+      throws Throwable {
+    if (existing == null || !valueClass.isInstance(existing)) {
+      return createThemeValue(colorConstructor, valueConstructor, color, slot);
+    }
+
+    Object[] args = new Object[8];
+    String[] fields = {"a", "b", "c", "d", "e", "f", "g", "h"};
+    for (int i = 0; i < fields.length; i++) {
+      args[i] = Reflect.getObjectField(existing, fields[i]);
+    }
+    Object colorValue = colorConstructor.newInstance(ColorStateList.valueOf(color));
+    putColorSlot(args, colorValue, slot);
+    return valueConstructor.newInstance(args);
+  }
+
+  private static void putColorSlot(Object[] args, Object colorValue, ColorSlot slot) {
     switch (slot) {
       case IMAGE_TINT:
         args[1] = colorValue;
@@ -180,21 +217,6 @@ final class ThemeElementBridge26110 {
         args[7] = colorValue;
         break;
     }
-    return valueConstructor.newInstance(args);
-  }
-
-  private static Object createMiniThemeValue(
-      Constructor<?> colorConstructor, Constructor<?> valueConstructor, int color) throws Throwable {
-    Object colorValue = colorConstructor.newInstance(ColorStateList.valueOf(color));
-    return valueConstructor.newInstance(
-        null,
-        colorValue,
-        colorValue,
-        null,
-        colorValue,
-        colorValue,
-        colorValue,
-        colorValue);
   }
 
   private static ColorSlot resolveSlot(String element) {
