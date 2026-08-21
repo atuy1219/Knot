@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 jobs:
   build:
@@ -29,12 +30,33 @@ jobs:
           gradle-version: '9.7.0'
 
       - name: Build debug APK
+        id: build
         run: gradle :app:assembleDebug --stacktrace
 
       - name: Upload debug APK
+        id: artifact
         uses: actions/upload-artifact@v4
         with:
           name: Knot-theme-extend
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Report build status
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const buildOk = '${{ steps.build.outcome }}' === 'success';
+            const artifactOk = '${{ steps.artifact.outcome }}' === 'success';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: buildOk && artifactOk ? 'success' : 'failure',
+              context: 'theme-extend-build',
+              description: buildOk && artifactOk
+                ? 'assembleDebug and artifact succeeded'
+                : 'assembleDebug or artifact failed',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
