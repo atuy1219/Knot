@@ -43,6 +43,9 @@ public class ThemeExtendHook implements BaseHook {
     if (versionName.startsWith("26.11.0")) {
       ThemeElementBridge26110.install(
           ThemeExtendHook::enabled, ThemeExtendHook::resolveThemeElementColor, lpparam, TAG);
+    } else if (versionName.startsWith("26.13.0")) {
+      ThemeElementBridge26130.install(
+          ThemeExtendHook::enabled, ThemeExtendHook::resolveThemeElementColor, lpparam, TAG);
     }
     Knot.log(TAG + ": installed semantic resource bridge for LINE " + versionName);
   }
@@ -69,6 +72,7 @@ public class ThemeExtendHook implements BaseHook {
                 palette = parsed;
                 SemanticColorBridge.resetProbe(TAG);
                 ThemeElementBridge26110.resetProbe();
+                ThemeElementBridge26130.resetProbe();
                 Knot.log(
                     TAG
                         + ": palette semantic="

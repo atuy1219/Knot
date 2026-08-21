@@ -3,12 +3,15 @@ package app.zipper.knot.hooks;
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
+import android.graphics.Color;
 import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import app.zipper.knot.Knot;
 import app.zipper.knot.KnotConfig;
 import app.zipper.knot.LoadParam;
 import app.zipper.knot.Reflect;
+import io.github.libxposed.api.XposedInterface.Hooker;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -25,18 +28,46 @@ public class ModuleDrawableCompatHook implements BaseHook {
 
   @Override
   public void hook(KnotConfig config, LoadParam lpparam) throws Throwable {
+    Hooker drawableHook =
+        chain -> {
+          int id = (int) chain.getArg(0);
+          String name = drawableName(id);
+          if (name == null) return chain.proceed();
+
+          Resources targetResources = (Resources) chain.getThisObject();
+          Bitmap bitmap = loadBitmap(id, name);
+          if (bitmap != null) return new BitmapDrawable(targetResources, bitmap);
+
+          Knot.log(
+              "Knot: ModuleDrawableCompatHook failed to resolve fake drawable 0x"
+                  + Integer.toHexString(id)
+                  + " ("
+                  + name
+                  + ")");
+          return new ColorDrawable(Color.TRANSPARENT);
+        };
+
     Knot.module
         .hook(Reflect.findMethodExact(Resources.class, "getDrawable", int.class))
-        .intercept(
-            chain -> {
-              int id = (int) chain.getArg(0);
-              String name = drawableName(id);
-              if (name == null) return chain.proceed();
-
-              Bitmap bitmap = loadBitmap(id, name);
-              if (bitmap == null) return chain.proceed();
-              return new BitmapDrawable((Resources) chain.getThisObject(), bitmap);
-            });
+        .intercept(drawableHook);
+    Knot.module
+        .hook(
+            Reflect.findMethodExact(Resources.class, "getDrawable", int.class, Resources.Theme.class))
+        .intercept(drawableHook);
+    Knot.module
+        .hook(
+            Reflect.findMethodExact(
+                Resources.class, "getDrawableForDensity", int.class, int.class))
+        .intercept(drawableHook);
+    Knot.module
+        .hook(
+            Reflect.findMethodExact(
+                Resources.class,
+                "getDrawableForDensity",
+                int.class,
+                int.class,
+                Resources.Theme.class))
+        .intercept(drawableHook);
   }
 
   private static String drawableName(int id) {

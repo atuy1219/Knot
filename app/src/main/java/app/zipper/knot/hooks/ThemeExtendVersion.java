@@ -22,6 +22,7 @@ final class ThemeExtendVersion {
     if (versionName == null) return null;
     if (versionName.startsWith("26.10.1")) return ThemeExtendVersion26101.create();
     if (versionName.startsWith("26.11.0")) return ThemeExtendVersion26110.create();
+    if (versionName.startsWith("26.13.0")) return ThemeExtendVersion26130.create();
     return null;
   }
 }
