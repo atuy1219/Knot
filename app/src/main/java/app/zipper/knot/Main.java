@@ -72,6 +72,7 @@ public class Main extends XposedModule {
       applyHook(new ShowConfigWarning(), lpparam);
       applyHook(new HomeSettingsTooltip(), lpparam);
       applyHook(new SafeResourceFix(), lpparam);
+      applyHook(new ModuleDrawableCompatHook(), lpparam);
 
       // Always installed; self-gates at runtime to avoid the cold-start settings-load race
       applyHook(new ReadReceiptHandler(), lpparam);
@@ -154,6 +155,9 @@ public class Main extends XposedModule {
       }
       if (options.useCustomFont.enabled) {
         applyHook(new FontUnlockHook(), lpparam);
+      }
+      if (options.extendTheme.enabled) {
+        applyHook(new ThemeExtendHook(), lpparam);
       }
       if (options.useAmoledTheme.enabled) {
         applyHook(new AmoledThemeHook(), lpparam);
