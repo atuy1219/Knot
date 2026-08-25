@@ -23,7 +23,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
+
+      - name: Set up Gradle 9.7.0
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.7.0'
 
       - name: Set up Android SDK tools
         uses: android-actions/setup-android@v3
@@ -35,14 +39,11 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager --channel=3 "platform-tools" "platforms;android-37.0"
 
-      - name: Make Gradle wrapper executable
-        run: chmod +x gradlew
-
       - name: Check formatting
-        run: ./gradlew --no-daemon spotlessCheck
+        run: gradle --no-daemon spotlessCheck
 
       - name: Build debug APK
-        run: ./gradlew --no-daemon :app:assembleDebug
+        run: gradle --no-daemon :app:assembleDebug
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
