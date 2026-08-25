@@ -31,19 +31,9 @@ jobs:
           packages: platform-tools
 
       - name: Install Android 17 SDK
-        shell: bash
         run: |
-          set -euo pipefail
-          SDK_LIST="$(sdkmanager --list --channel=3)"
-          PLATFORM="$(printf '%s\n' "$SDK_LIST" | awk '$1 == "platforms;android-37.0" || $1 == "platforms;android-37" || $1 ~ /^platforms;android-CinnamonBun/ { print $1; exit }')"
-          if [ -z "$PLATFORM" ]; then
-            echo "Android 17 platform package was not found. Available API 37 packages:" >&2
-            printf '%s\n' "$SDK_LIST" | awk '$1 ~ /^platforms;android-37/ { print $1 }' >&2
-            exit 1
-          fi
-          echo "Using SDK package: $PLATFORM"
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager --channel=3 "platform-tools" "$PLATFORM"
+          sdkmanager --channel=3 "platform-tools" "platforms;android-37.0"
 
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
