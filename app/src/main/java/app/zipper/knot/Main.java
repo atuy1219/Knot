@@ -172,6 +172,7 @@ public class Main extends XposedModule {
         applyHook(new NotificationHook(), lpparam);
       }
       if (options.imageNotificationPreview.enabled) {
+        applyHook(new MessageCaptureHook(), lpparam);
         applyHook(new TextNotificationDatabaseHook(), lpparam);
         applyHook(new ImageNotificationPreviewHook(), lpparam);
       }
