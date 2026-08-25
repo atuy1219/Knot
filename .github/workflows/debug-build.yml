@@ -35,20 +35,15 @@ jobs:
         run: |
           set -euo pipefail
           SDK_LIST="$(sdkmanager --list --channel=3)"
-          PLATFORM="$(printf '%s\n' "$SDK_LIST" | awk '$1 == "platforms;android-37" || $1 ~ /^platforms;android-CinnamonBun/ { print $1; exit }')"
+          PLATFORM="$(printf '%s\n' "$SDK_LIST" | awk '$1 == "platforms;android-37.0" || $1 == "platforms;android-37" || $1 ~ /^platforms;android-CinnamonBun/ { print $1; exit }')"
           if [ -z "$PLATFORM" ]; then
-            echo "Android 17 platform package was not found. Available platform packages:" >&2
-            printf '%s\n' "$SDK_LIST" | awk '$1 ~ /^platforms;/ { print $1 }' >&2
+            echo "Android 17 platform package was not found. Available API 37 packages:" >&2
+            printf '%s\n' "$SDK_LIST" | awk '$1 ~ /^platforms;android-37/ { print $1 }' >&2
             exit 1
           fi
           echo "Using SDK package: $PLATFORM"
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager --channel=3 "platform-tools" "$PLATFORM"
-
-          PLATFORM_DIR="${PLATFORM#platforms;}"
-          if [ "$PLATFORM_DIR" != "android-37" ] && [ -d "$ANDROID_SDK_ROOT/platforms/$PLATFORM_DIR" ] && [ ! -e "$ANDROID_SDK_ROOT/platforms/android-37" ]; then
-            ln -s "$ANDROID_SDK_ROOT/platforms/$PLATFORM_DIR" "$ANDROID_SDK_ROOT/platforms/android-37"
-          fi
 
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
