@@ -28,8 +28,12 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses >/dev/null || true
 
-      - name: Install Android 37 platform
-        run: sdkmanager --channel=3 "platform-tools" "platforms;android-37"
+      - name: Install Android 17 preview SDK
+        run: |
+          sdkmanager --channel=3 "platform-tools" "platforms;android-CinnamonBun"
+          if [ ! -e "$ANDROID_SDK_ROOT/platforms/android-37" ] && [ -d "$ANDROID_SDK_ROOT/platforms/android-CinnamonBun" ]; then
+            ln -s "$ANDROID_SDK_ROOT/platforms/android-CinnamonBun" "$ANDROID_SDK_ROOT/platforms/android-37"
+          fi
 
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
