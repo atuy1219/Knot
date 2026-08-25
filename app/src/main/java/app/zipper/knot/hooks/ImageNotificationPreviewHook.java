@@ -4,43 +4,65 @@ import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.pm.PackageInfo;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.util.Base64;
 import app.zipper.knot.Knot;
 import app.zipper.knot.KnotConfig;
 import app.zipper.knot.LineVersion;
 import app.zipper.knot.LoadParam;
 import app.zipper.knot.Reflect;
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.InputStream;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import javax.crypto.Cipher;
+import javax.crypto.Mac;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 import org.json.JSONObject;
 
 /**
  * Adds an image preview to LINE image-message notifications without blocking LINE's notify() call.
  *
- * <p>This first implementation intentionally avoids the old /Android/data directory scan. It reads
- * the exact attachment URI from naver_line.chat_history and updates the already-posted notification
- * asynchronously. It also logs only the names/presence of OBS/E2EE metadata needed for the direct
- * OBS implementation; media keys themselves are never logged.
+ * <p>The fast path downloads the preview directly from LINE OBS when LINE's own in-process OBS token
+ * has been observed. E2EE media is decrypted in memory using the message key material. If the fast
+ * path is unavailable, the exact attachment URI in naver_line.chat_history is used as a fallback.
+ * No access token or media key is logged or persisted.
  */
 public class ImageNotificationPreviewHook implements BaseHook {
   static final String REPOST_MARKER = "knot.image_notification_preview_repost";
 
+  private static final String OBS_BASE = "https://obs-jp.line-apps.com/";
   private static final int ATTACHMENT_IMAGE = 1;
   private static final int DB_ATTEMPTS = 30;
+  private static final int OBS_TOKEN_ATTEMPTS = 20;
+  private static final int OBS_ATTEMPTS = 6;
   private static final int FILE_ATTEMPTS = 30;
   private static final long RETRY_DELAY_MS = 50L;
   private static final int MAX_BITMAP_DIMENSION = 1200;
+  private static final int MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
+
+  private static volatile String obsAccessToken;
 
   private static final ExecutorService executor =
       Executors.newFixedThreadPool(
@@ -55,6 +77,8 @@ public class ImageNotificationPreviewHook implements BaseHook {
 
   @Override
   public void hook(KnotConfig config, LoadParam lpparam) throws Throwable {
+    hookObsTokenCapture(lpparam.classLoader);
+
     Knot.module
         .hook(
             Reflect.findMethodExact(
@@ -83,6 +107,61 @@ public class ImageNotificationPreviewHook implements BaseHook {
             });
   }
 
+  private static void hookObsTokenCapture(ClassLoader classLoader) {
+    try {
+      LineVersion.Config version = LineVersion.get();
+      if (version == null || !hasText(version.thrift.talkServiceClientImplClass)) return;
+      Class<?> clientClass = Reflect.findClass(version.thrift.talkServiceClientImplClass, classLoader);
+      int hooks = 0;
+      for (Method method : clientClass.getDeclaredMethods()) {
+        if (!"acquireEncryptedAccessToken".equals(method.getName())) continue;
+        method.setAccessible(true);
+        Knot.module
+            .hook(method)
+            .intercept(
+                chain -> {
+                  Object result = chain.proceed();
+                  captureObsToken(result);
+                  return result;
+                });
+        hooks++;
+      }
+      Knot.log("Knot: image preview: OBS token capture hooks=" + hooks);
+    } catch (Throwable t) {
+      Knot.log("Knot: image preview: OBS token capture unavailable: " + t.getClass().getSimpleName());
+    }
+  }
+
+  private static void captureObsToken(Object result) {
+    if (result == null) return;
+    if (result instanceof String) {
+      storeObsTokenCandidate((String) result);
+      return;
+    }
+
+    // Some generated clients wrap the RPC result. Inspect only direct String fields and never log
+    // their values.
+    try {
+      for (Field field : result.getClass().getDeclaredFields()) {
+        if (field.getType() != String.class) continue;
+        field.setAccessible(true);
+        Object value = field.get(result);
+        if (value instanceof String) storeObsTokenCandidate((String) value);
+      }
+    } catch (Throwable ignored) {
+    }
+  }
+
+  private static void storeObsTokenCandidate(String value) {
+    if (!hasText(value)) return;
+    String token = value;
+    int separator = value.lastIndexOf('\u001e');
+    if (separator >= 0 && separator + 1 < value.length()) token = value.substring(separator + 1);
+    if (token.length() < 16 || token.indexOf(' ') >= 0 || token.indexOf('\n') >= 0) return;
+    obsAccessToken = token;
+    Knot.log("Knot: image preview: OBS access token captured in memory");
+  }
+
   private static boolean isCandidate(String tag, Notification notification) {
     if (notification == null || notification.extras == null) return false;
     if (notification.extras.getBoolean(REPOST_MARKER, false)) return false;
@@ -109,17 +188,22 @@ public class ImageNotificationPreviewHook implements BaseHook {
 
       logProbe(messageId, row);
 
-      Bitmap bitmap = awaitLocalBitmap(context, row.localUri);
-      if (bitmap == null) {
-        Knot.log(
-            "Knot: image preview: local image not ready; OBS direct path metadata probe completed"
-                + " for message="
-                + messageId);
+      Bitmap bitmap = tryObsPreview(context, messageId, row);
+      if (bitmap != null) {
+        repost(context, tag, id, original, bitmap);
+        Knot.log("Knot: image preview: notification updated from OBS for message=" + messageId);
         return;
       }
 
-      repost(context, tag, id, original, bitmap);
-      Knot.log("Knot: image preview: notification updated for message=" + messageId);
+      bitmap = awaitLocalBitmap(context, row.localUri);
+      if (bitmap != null) {
+        repost(context, tag, id, original, bitmap);
+        Knot.log("Knot: image preview: notification updated from local URI for message=" + messageId);
+        return;
+      }
+
+      Knot.log(
+          "Knot: image preview: preview unavailable after OBS/local fallback for message=" + messageId);
     } catch (Throwable t) {
       Knot.log("Knot: image preview failed: " + t);
     }
@@ -131,7 +215,8 @@ public class ImageNotificationPreviewHook implements BaseHook {
       ImageRow row = readImageRow(context, messageId);
       if (row != null && row.attachmentType == ATTACHMENT_IMAGE) {
         lastImage = row;
-        if (hasText(row.localUri)) return row;
+        // parameter is useful for OBS even before the local URI is populated.
+        if (hasText(row.parameter) || hasText(row.localUri)) return row;
       }
       if (!sleepBriefly()) break;
     }
@@ -165,6 +250,192 @@ public class ImageNotificationPreviewHook implements BaseHook {
       if (cursor != null) cursor.close();
       if (db != null) db.close();
     }
+  }
+
+  private static Bitmap tryObsPreview(Context context, String messageId, ImageRow row) {
+    Map<String, String> metadata = parseParameter(row.parameter);
+    String oid = firstValue(metadata, "OID", "oid");
+    String sid = firstValue(metadata, "SID", "sid");
+    String keyMaterial = firstValue(metadata, "ENC_KM", "keyMaterial", "KEY_MATERIAL");
+
+    String token = awaitObsToken();
+    if (!hasText(token)) return null;
+
+    List<ObsCandidate> candidates = new ArrayList<>();
+    if (hasText(oid) && hasText(sid)) {
+      candidates.add(
+          new ObsCandidate(
+              OBS_BASE + "r/talk/" + pathSegment(sid) + "/" + pathSegment(oid) + "__ud-preview",
+              true,
+              keyMaterial));
+    }
+    // Plain media is addressed by the server message id.
+    candidates.add(
+        new ObsCandidate(
+            OBS_BASE + "r/talk/m/" + pathSegment(messageId) + "/preview", false, null));
+
+    String application = lineApplicationHeader(context);
+    String talkMeta = makeTalkMeta(messageId);
+
+    for (ObsCandidate candidate : candidates) {
+      for (int attempt = 0; attempt < OBS_ATTEMPTS; attempt++) {
+        try {
+          byte[] data = downloadObs(candidate.url, token, application, candidate.privateObject ? talkMeta : null);
+          if (data == null) {
+            if (!sleepBriefly()) break;
+            continue;
+          }
+
+          if (hasText(candidate.keyMaterial)) {
+            try {
+              data = decryptMedia(data, candidate.keyMaterial);
+            } catch (Throwable ignored) {
+              // If the payload unexpectedly is plain, BitmapFactory below still gets a chance.
+            }
+          }
+
+          Bitmap bitmap = decodeBytesScaled(data);
+          if (bitmap != null) return bitmap;
+          break;
+        } catch (Throwable ignored) {
+          break;
+        }
+      }
+    }
+    return null;
+  }
+
+  private static String awaitObsToken() {
+    for (int attempt = 0; attempt < OBS_TOKEN_ATTEMPTS; attempt++) {
+      String token = obsAccessToken;
+      if (hasText(token)) return token;
+      if (!sleepBriefly()) break;
+    }
+    return obsAccessToken;
+  }
+
+  private static byte[] downloadObs(
+      String url, String token, String application, String talkMeta) throws Exception {
+    HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+    connection.setRequestMethod("GET");
+    connection.setConnectTimeout(1500);
+    connection.setReadTimeout(1500);
+    connection.setRequestProperty("Accept", "*/*");
+    connection.setRequestProperty("x-line-access", token);
+    if (hasText(application)) connection.setRequestProperty("x-line-application", application);
+    if (hasText(talkMeta)) connection.setRequestProperty("X-Talk-Meta", talkMeta);
+
+    try {
+      int status = connection.getResponseCode();
+      if (status == HttpURLConnection.HTTP_ACCEPTED) return null;
+      if (status != HttpURLConnection.HTTP_OK) return new byte[0];
+
+      try (InputStream in = connection.getInputStream();
+          ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+        byte[] buffer = new byte[8192];
+        int total = 0;
+        int read;
+        while ((read = in.read(buffer)) != -1) {
+          total += read;
+          if (total > MAX_PREVIEW_BYTES) return new byte[0];
+          out.write(buffer, 0, read);
+        }
+        return out.toByteArray();
+      }
+    } finally {
+      connection.disconnect();
+    }
+  }
+
+  private static String lineApplicationHeader(Context context) {
+    try {
+      PackageInfo info = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+      String version = info.versionName;
+      if (!hasText(version)) return null;
+      return "ANDROID\t" + version + "\tAndroid OS\t" + Build.VERSION.RELEASE;
+    } catch (Throwable ignored) {
+      return null;
+    }
+  }
+
+  private static String makeTalkMeta(String messageId) {
+    if (!hasText(messageId)) return null;
+    try {
+      ByteArrayOutputStream raw = new ByteArrayOutputStream();
+      DataOutputStream out = new DataOutputStream(raw);
+
+      // Message field 4: id (TType.STRING)
+      out.writeByte(0x0B);
+      out.writeShort(4);
+      byte[] id = messageId.getBytes(StandardCharsets.UTF_8);
+      out.writeInt(id.length);
+      out.write(id);
+
+      // Message field 27: empty LIST<STRUCT>
+      out.writeByte(0x0F);
+      out.writeShort(27);
+      out.writeByte(0x0C);
+      out.writeInt(0);
+      out.writeByte(0x00); // STOP
+      out.flush();
+
+      String thrift = Base64.encodeToString(raw.toByteArray(), Base64.NO_WRAP);
+      JSONObject json = new JSONObject();
+      json.put("message", thrift);
+      return Base64.encodeToString(
+          json.toString().getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+    } catch (Throwable ignored) {
+      return null;
+    }
+  }
+
+  private static byte[] decryptMedia(byte[] input, String keyMaterialB64) throws Exception {
+    if (input == null || input.length <= 32) throw new IllegalArgumentException("short media");
+    byte[] keyMaterial = Base64.decode(keyMaterialB64, Base64.DEFAULT);
+    byte[] derived = hkdfSha256(keyMaterial, "FileEncryption".getBytes(StandardCharsets.UTF_8), 76);
+    byte[] encKey = Arrays.copyOfRange(derived, 0, 32);
+    byte[] macKey = Arrays.copyOfRange(derived, 32, 64);
+    byte[] iv = new byte[16];
+    System.arraycopy(derived, 64, iv, 0, 12);
+
+    int cipherLength = input.length - 32;
+    byte[] ciphertext = Arrays.copyOfRange(input, 0, cipherLength);
+    byte[] expectedMac = Arrays.copyOfRange(input, cipherLength, input.length);
+
+    Mac hmac = Mac.getInstance("HmacSHA256");
+    hmac.init(new SecretKeySpec(macKey, "HmacSHA256"));
+    byte[] actualMac = hmac.doFinal(ciphertext);
+    if (!MessageDigest.isEqual(expectedMac, actualMac)) {
+      throw new SecurityException("invalid media HMAC");
+    }
+
+    Cipher cipher = Cipher.getInstance("AES/CTR/NoPadding");
+    cipher.init(
+        Cipher.DECRYPT_MODE, new SecretKeySpec(encKey, "AES"), new IvParameterSpec(iv));
+    return cipher.doFinal(ciphertext);
+  }
+
+  private static byte[] hkdfSha256(byte[] ikm, byte[] info, int length) throws Exception {
+    byte[] zeroSalt = new byte[32];
+    Mac extract = Mac.getInstance("HmacSHA256");
+    extract.init(new SecretKeySpec(zeroSalt, "HmacSHA256"));
+    byte[] prk = extract.doFinal(ikm);
+
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    byte[] previous = new byte[0];
+    int counter = 1;
+    while (out.size() < length) {
+      Mac expand = Mac.getInstance("HmacSHA256");
+      expand.init(new SecretKeySpec(prk, "HmacSHA256"));
+      expand.update(previous);
+      expand.update(info);
+      expand.update((byte) counter);
+      previous = expand.doFinal();
+      int remaining = length - out.size();
+      out.write(previous, 0, Math.min(previous.length, remaining));
+      counter++;
+    }
+    return out.toByteArray();
   }
 
   private static Bitmap awaitLocalBitmap(Context context, String localUri) {
@@ -208,14 +479,28 @@ public class ImageNotificationPreviewHook implements BaseHook {
     BitmapFactory.decodeFile(path, bounds);
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
 
-    int sample = 1;
-    while (Math.max(bounds.outWidth / sample, bounds.outHeight / sample) > MAX_BITMAP_DIMENSION) {
-      sample <<= 1;
-    }
-
+    int sample = sampleSize(bounds.outWidth, bounds.outHeight);
     BitmapFactory.Options options = new BitmapFactory.Options();
     options.inSampleSize = sample;
     return scaleDown(BitmapFactory.decodeFile(path, options));
+  }
+
+  private static Bitmap decodeBytesScaled(byte[] data) {
+    if (data == null || data.length == 0) return null;
+    BitmapFactory.Options bounds = new BitmapFactory.Options();
+    bounds.inJustDecodeBounds = true;
+    BitmapFactory.decodeByteArray(data, 0, data.length, bounds);
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
+
+    BitmapFactory.Options options = new BitmapFactory.Options();
+    options.inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight);
+    return scaleDown(BitmapFactory.decodeByteArray(data, 0, data.length, options));
+  }
+
+  private static int sampleSize(int width, int height) {
+    int sample = 1;
+    while (Math.max(width / sample, height / sample) > MAX_BITMAP_DIMENSION) sample <<= 1;
+    return sample;
   }
 
   private static Bitmap scaleDown(Bitmap bitmap) {
@@ -354,6 +639,11 @@ public class ImageNotificationPreviewHook implements BaseHook {
     }
   }
 
+  private static String pathSegment(String value) {
+    if (!hasText(value)) return "";
+    return Uri.encode(value);
+  }
+
   private static String getString(Cursor cursor, String column) {
     int index = cursor.getColumnIndex(column);
     if (index < 0 || cursor.isNull(index)) return null;
@@ -390,5 +680,17 @@ public class ImageNotificationPreviewHook implements BaseHook {
     int attachmentType;
     String localUri;
     String parameter;
+  }
+
+  private static final class ObsCandidate {
+    final String url;
+    final boolean privateObject;
+    final String keyMaterial;
+
+    ObsCandidate(String url, boolean privateObject, String keyMaterial) {
+      this.url = url;
+      this.privateObject = privateObject;
+      this.keyMaterial = keyMaterial;
+    }
   }
 }
