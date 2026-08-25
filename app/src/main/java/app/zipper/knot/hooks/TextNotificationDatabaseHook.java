@@ -18,12 +18,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Rebuilds plain-text LINE message notifications from naver_line.chat_history.
+ * Rebuilds plain-text LINE message notifications from decoded message data.
  *
- * <p>The original notification is always posted first. Database lookup and the enriched repost run
- * asynchronously, so a missing/locked database or schema drift never delays LINE's notify() call.
- * Only ordinary text rows are rebuilt; media/system rows are left to LINE and the image-preview
- * hook.
+ * <p>The fast path uses message fields captured immediately before LINE persists chat_history, so
+ * notification construction can complete synchronously without opening SQLite. If that capture is
+ * unavailable, the original notification is posted first and the existing database lookup remains
+ * as a compatibility fallback.
  */
 public class TextNotificationDatabaseHook implements BaseHook {
   private static final String REPOST_MARKER = "knot.text_notification_db_repost";
@@ -70,6 +70,27 @@ public class TextNotificationDatabaseHook implements BaseHook {
               String messageId =
                   stringExtra(notification.extras, version.notification.messageIdExtra);
               if (!hasText(messageId)) return chain.proceed();
+
+              CapturedMessageStore.MessageData captured = CapturedMessageStore.get(messageId);
+              if (captured != null && captured.isPlainText()) {
+                Context context = Knot.currentApplication();
+                if (context != null) {
+                  MessageRow row = fromCaptured(captured);
+                  String sender = CapturedMessageStore.senderName(row.fromMid);
+                  if (!hasText(sender)) sender = originalSender(notification.extras);
+                  Notification enriched = rebuild(context, notification, row, sender);
+                  if (enriched != null) {
+                    Knot.log(
+                        "Knot: text notification: pre-notify cache hit ageMs="
+                            + CapturedMessageStore.ageMs(captured));
+                    return chain.proceed(new Object[] {tag, id, enriched});
+                  }
+                }
+              }
+
+              // If the pre-persistence capture already proves this is media/system content, avoid a
+              // redundant database lookup and let the appropriate notification hook handle it.
+              if (definitelyNotPlainText(captured)) return chain.proceed();
 
               Object result = chain.proceed();
               executor.execute(() -> updateTextNotification(tag, id, notification, messageId));
@@ -121,6 +142,27 @@ public class TextNotificationDatabaseHook implements BaseHook {
     } catch (Throwable t) {
       Knot.log("Knot: text notification enrichment failed: " + t);
     }
+  }
+
+  private static MessageRow fromCaptured(CapturedMessageStore.MessageData captured) {
+    MessageRow row = new MessageRow();
+    row.localId = captured.localId;
+    row.chatId = captured.chatId;
+    row.fromMid = captured.fromMid;
+    row.content = captured.content;
+    row.messageType = captured.messageType;
+    row.attachmentType = captured.attachmentType;
+    row.createdTime = captured.createdTime;
+    row.senderName = CapturedMessageStore.senderName(captured.fromMid);
+    return row;
+  }
+
+  private static boolean definitelyNotPlainText(CapturedMessageStore.MessageData captured) {
+    if (captured == null) return false;
+    if (captured.attachmentType != Integer.MIN_VALUE
+        && captured.attachmentType != ATTACHMENT_NONE) return true;
+    return captured.messageType != Integer.MIN_VALUE
+        && captured.messageType != MESSAGE_TYPE_MESSAGE;
   }
 
   private static MessageRow awaitMessageRow(Context context, String messageId) {
