@@ -18,10 +18,8 @@ import app.zipper.knot.Reflect;
 import java.io.File;
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -241,6 +239,14 @@ public class ImageNotificationPreviewHook implements BaseHook {
       Notification.Builder builder = Notification.Builder.recoverBuilder(context, original);
       Bundle marker = new Bundle();
       marker.putBoolean(REPOST_MARKER, true);
+
+      // StackMessageNotificationsHook requires a non-empty line.message.id. Clear it only on the
+      // Knot repost so the already-built BigPictureStyle is not replaced by MessagingStyle.
+      LineVersion.Config version = LineVersion.get();
+      if (version != null && hasText(version.notification.messageIdExtra)) {
+        marker.putString(version.notification.messageIdExtra, "");
+      }
+
       builder.addExtras(marker);
       builder.setOnlyAlertOnce(true);
       builder.setStyle(
