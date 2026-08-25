@@ -25,14 +25,29 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses >/dev/null || true
+      - name: Set up Android SDK tools
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
-      - name: Install Android 17 preview SDK
+      - name: Install Android 17 SDK
+        shell: bash
         run: |
-          sdkmanager --channel=3 "platform-tools" "platforms;android-CinnamonBun"
-          if [ ! -e "$ANDROID_SDK_ROOT/platforms/android-37" ] && [ -d "$ANDROID_SDK_ROOT/platforms/android-CinnamonBun" ]; then
-            ln -s "$ANDROID_SDK_ROOT/platforms/android-CinnamonBun" "$ANDROID_SDK_ROOT/platforms/android-37"
+          set -euo pipefail
+          SDK_LIST="$(sdkmanager --list --channel=3)"
+          PLATFORM="$(printf '%s\n' "$SDK_LIST" | awk '$1 == "platforms;android-37" || $1 ~ /^platforms;android-CinnamonBun/ { print $1; exit }')"
+          if [ -z "$PLATFORM" ]; then
+            echo "Android 17 platform package was not found. Available platform packages:" >&2
+            printf '%s\n' "$SDK_LIST" | awk '$1 ~ /^platforms;/ { print $1 }' >&2
+            exit 1
+          fi
+          echo "Using SDK package: $PLATFORM"
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --channel=3 "platform-tools" "$PLATFORM"
+
+          PLATFORM_DIR="${PLATFORM#platforms;}"
+          if [ "$PLATFORM_DIR" != "android-37" ] && [ -d "$ANDROID_SDK_ROOT/platforms/$PLATFORM_DIR" ] && [ ! -e "$ANDROID_SDK_ROOT/platforms/android-37" ]; then
+            ln -s "$ANDROID_SDK_ROOT/platforms/$PLATFORM_DIR" "$ANDROID_SDK_ROOT/platforms/android-37"
           fi
 
       - name: Make Gradle wrapper executable
