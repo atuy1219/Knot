@@ -39,9 +39,7 @@ public class MessageCaptureHook implements BaseHook {
               try {
                 String table = (String) chain.getArg(0);
                 ContentValues values = (ContentValues) chain.getArg(2);
-                CapturedMessageStore.MessageData captured =
-                    CapturedMessageStore.capture(table, values, null);
-                if (captured != null) ImageNotificationPreviewHook.prefetchCapturedImage(captured);
+                CapturedMessageStore.capture(table, values, null);
               } catch (Throwable t) {
                 Knot.log("Knot: message pre-capture insert failed: " + t.getClass().getSimpleName());
               }
@@ -68,9 +66,7 @@ public class MessageCaptureHook implements BaseHook {
                 String whereClause = (String) chain.getArg(2);
                 String[] whereArgs = (String[]) chain.getArg(3);
                 String serverId = serverIdFromWhere(whereClause, whereArgs);
-                CapturedMessageStore.MessageData captured =
-                    CapturedMessageStore.capture(table, values, serverId);
-                if (captured != null) ImageNotificationPreviewHook.prefetchCapturedImage(captured);
+                CapturedMessageStore.capture(table, values, serverId);
               } catch (Throwable t) {
                 Knot.log("Knot: message pre-capture update failed: " + t.getClass().getSimpleName());
               }
