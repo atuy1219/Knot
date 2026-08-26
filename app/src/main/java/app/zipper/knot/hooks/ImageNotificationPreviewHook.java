@@ -44,10 +44,11 @@ import org.json.JSONObject;
 /**
  * Adds an image preview to LINE image-message notifications without blocking LINE's notify() call.
  *
- * <p>The fast path downloads the preview directly from LINE OBS when LINE's own in-process OBS token
- * has been observed. E2EE media is decrypted in memory using the message key material. If the fast
- * path is unavailable, the exact attachment URI in naver_line.chat_history is used as a fallback.
- * No access token or media key is logged or persisted.
+ * <p>The fast path consumes message fields captured immediately before LINE persists chat_history,
+ * avoiding SQLite polling when attachment metadata is already available. Preview bytes are fetched
+ * directly from LINE OBS when an in-process OBS token has been observed; E2EE media is decrypted in
+ * memory using the captured message key material. SQLite and the exact local attachment URI remain
+ * compatibility fallbacks. No access token, media key, message id, chat id, or sender id is logged.
  */
 public class ImageNotificationPreviewHook implements BaseHook {
   static final String REPOST_MARKER = "knot.image_notification_preview_repost";
@@ -100,9 +101,23 @@ public class ImageNotificationPreviewHook implements BaseHook {
                   stringExtra(notification.extras, version.notification.messageIdExtra);
               if (!hasText(messageId)) return chain.proceed();
 
-              // Never delay the original LINE notification. Image lookup happens after it is posted.
+              CapturedMessageStore.MessageData captured = CapturedMessageStore.get(messageId);
+              if (definitelyNotImage(captured)) {
+                Knot.log(
+                    "Knot: image preview: pre-notify cache non-image type="
+                        + captured.messageType
+                        + " attachment="
+                        + captured.attachmentType
+                        + " ageMs="
+                        + CapturedMessageStore.ageMs(captured));
+                return chain.proceed();
+              }
+
+              // Never delay the original LINE notification. Image lookup/download happens after it
+              // is posted, but pre-persistence metadata is passed into the worker when available.
               Object result = chain.proceed();
-              executor.execute(() -> updateImageNotification(tag, id, notification, messageId));
+              executor.execute(
+                  () -> updateImageNotification(tag, id, notification, messageId, captured));
               return result;
             });
   }
@@ -178,45 +193,96 @@ public class ImageNotificationPreviewHook implements BaseHook {
   }
 
   private static void updateImageNotification(
-      String tag, int id, Notification original, String messageId) {
+      String tag,
+      int id,
+      Notification original,
+      String messageId,
+      CapturedMessageStore.MessageData captured) {
     try {
       Context context = Knot.currentApplication();
       if (context == null) return;
 
-      ImageRow row = awaitImageRow(context, messageId);
+      ImageRow row = fromCaptured(captured);
+      if (row != null && row.attachmentType == ATTACHMENT_IMAGE) {
+        Knot.log(
+            "Knot: image preview: pre-notify cache hit ageMs="
+                + CapturedMessageStore.ageMs(captured)
+                + " parameter="
+                + (hasText(row.parameter) ? "present" : "absent")
+                + " localUri="
+                + (hasText(row.localUri) ? "present" : "absent"));
+      }
+
+      if (row == null
+          || row.attachmentType != ATTACHMENT_IMAGE
+          || (!hasText(row.parameter) && !hasText(row.localUri))) {
+        row = awaitImageRow(context, messageId, false);
+      }
       if (row == null || row.attachmentType != ATTACHMENT_IMAGE) return;
 
-      logProbe(messageId, row);
+      logProbe(row);
 
       Bitmap bitmap = tryObsPreview(context, messageId, row);
       if (bitmap != null) {
         repost(context, tag, id, original, bitmap);
-        Knot.log("Knot: image preview: notification updated from OBS for message=" + messageId);
+        Knot.log("Knot: image preview: notification updated from OBS source=" + row.source);
         return;
+      }
+
+      if (!hasText(row.localUri) && "capture".equals(row.source)) {
+        ImageRow persisted = awaitImageRow(context, messageId, true);
+        if (persisted != null) row = persisted;
       }
 
       bitmap = awaitLocalBitmap(context, row.localUri);
       if (bitmap != null) {
         repost(context, tag, id, original, bitmap);
-        Knot.log("Knot: image preview: notification updated from local URI for message=" + messageId);
+        Knot.log("Knot: image preview: notification updated from local URI source=" + row.source);
         return;
       }
 
-      Knot.log(
-          "Knot: image preview: preview unavailable after OBS/local fallback for message=" + messageId);
+      Knot.log("Knot: image preview: preview unavailable after OBS/local fallback");
     } catch (Throwable t) {
-      Knot.log("Knot: image preview failed: " + t);
+      Knot.log("Knot: image preview failed: " + t.getClass().getSimpleName());
     }
   }
 
-  private static ImageRow awaitImageRow(Context context, String messageId) {
+  private static boolean definitelyNotImage(CapturedMessageStore.MessageData captured) {
+    return captured != null
+        && captured.attachmentType != Integer.MIN_VALUE
+        && captured.attachmentType != ATTACHMENT_IMAGE;
+  }
+
+  private static ImageRow fromCaptured(CapturedMessageStore.MessageData captured) {
+    if (captured == null) return null;
+    ImageRow row = new ImageRow();
+    row.localId = captured.localId;
+    row.chatId = captured.chatId;
+    row.localUri = captured.localUri;
+    row.parameter = captured.parameter;
+    row.attachmentType = captured.attachmentType;
+    row.source = "capture";
+    return row;
+  }
+
+  private static ImageRow awaitImageRow(Context context, String messageId, boolean requireLocalUri) {
     ImageRow lastImage = null;
     for (int attempt = 0; attempt < DB_ATTEMPTS; attempt++) {
       ImageRow row = readImageRow(context, messageId);
-      if (row != null && row.attachmentType == ATTACHMENT_IMAGE) {
-        lastImage = row;
-        // parameter is useful for OBS even before the local URI is populated.
-        if (hasText(row.parameter) || hasText(row.localUri)) return row;
+      if (row != null) {
+        if (row.attachmentType != -1 && row.attachmentType != ATTACHMENT_IMAGE) {
+          Knot.log(
+              "Knot: image preview: DB row confirmed non-image attachment=" + row.attachmentType);
+          return null;
+        }
+        if (row.attachmentType == ATTACHMENT_IMAGE) {
+          lastImage = row;
+          if (requireLocalUri) {
+            if (hasText(row.localUri)) return row;
+          } else if (hasText(row.parameter) || hasText(row.localUri)) {
+            return row;
+          }
+        }
       }
       if (!sleepBriefly()) break;
     }
@@ -243,6 +309,7 @@ public class ImageNotificationPreviewHook implements BaseHook {
       row.localUri = getString(cursor, "attachement_local_uri");
       row.parameter = getString(cursor, "parameter");
       row.attachmentType = getInt(cursor, "attachement_type", -1);
+      row.source = "db";
       return row;
     } catch (Throwable ignored) {
       return null;
@@ -280,7 +347,12 @@ public class ImageNotificationPreviewHook implements BaseHook {
     for (ObsCandidate candidate : candidates) {
       for (int attempt = 0; attempt < OBS_ATTEMPTS; attempt++) {
         try {
-          byte[] data = downloadObs(candidate.url, token, application, candidate.privateObject ? talkMeta : null);
+          byte[] data =
+              downloadObs(
+                  candidate.url,
+                  token,
+                  application,
+                  candidate.privateObject ? talkMeta : null);
           if (data == null) {
             if (!sleepBriefly()) break;
             continue;
@@ -554,11 +626,11 @@ public class ImageNotificationPreviewHook implements BaseHook {
         reposting.remove();
       }
     } catch (Throwable t) {
-      Knot.log("Knot: image preview repost failed: " + t);
+      Knot.log("Knot: image preview repost failed: " + t.getClass().getSimpleName());
     }
   }
 
-  private static void logProbe(String messageId, ImageRow row) {
+  private static void logProbe(ImageRow row) {
     Map<String, String> metadata = parseParameter(row.parameter);
     List<String> keys = new ArrayList<>(metadata.keySet());
     String oid = firstValue(metadata, "OID", "oid");
@@ -576,22 +648,20 @@ public class ImageNotificationPreviewHook implements BaseHook {
     }
 
     Knot.log(
-        "Knot: image preview probe: message="
-            + messageId
-            + " localId="
-            + safe(row.localId)
-            + " chat="
-            + safe(row.chatId)
+        "Knot: image preview probe: source="
+            + row.source
+            + " attachment="
+            + row.attachmentType
             + " uri="
             + uriInfo
             + " parameterKeys="
             + keys
             + " SID="
-            + safe(sid)
+            + (hasText(sid) ? "present" : "absent")
             + " OID="
-            + safe(oid)
+            + (hasText(oid) ? "present" : "absent")
             + " mediaKey="
-            + (hasText(keyMaterial) ? "present(len=" + keyMaterial.length() + ")" : "absent"));
+            + (hasText(keyMaterial) ? "present" : "absent"));
   }
 
   private static Map<String, String> parseParameter(String parameter) {
@@ -670,16 +740,13 @@ public class ImageNotificationPreviewHook implements BaseHook {
     return value != null && !value.isEmpty();
   }
 
-  private static String safe(String value) {
-    return hasText(value) ? value : "-";
-  }
-
   private static final class ImageRow {
     String localId;
     String chatId;
-    int attachmentType;
+    int attachmentType = -1;
     String localUri;
     String parameter;
+    String source = "unknown";
   }
 
   private static final class ObsCandidate {
