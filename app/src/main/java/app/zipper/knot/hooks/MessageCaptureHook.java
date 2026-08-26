@@ -5,20 +5,21 @@ import app.zipper.knot.Knot;
 import app.zipper.knot.KnotConfig;
 import app.zipper.knot.LoadParam;
 import app.zipper.knot.Reflect;
+import java.lang.reflect.Constructor;
 import java.util.Map;
 import org.json.JSONObject;
 
 /**
- * Captures LINE's normalized receive-message object after E2EE processing and before persistence.
+ * Captures LINE's successfully decrypted receive-message object before persistence.
  *
- * <p>LINE 26.13.0 routes RECEIVE_MESSAGE operations through te8.b3. Its f(...) method receives the
- * normalized Thrift Message (rg8.od) directly. Hooking this point avoids hooking SQLite entirely and
- * lets the notification fast path consume the same message object LINE itself is about to persist.
- * Database reads remain only as compatibility fallbacks in the notification hooks.
+ * <p>LINE 26.13.0 wraps a successfully decrypted rg8.od Message in te8.b3$b$a (the Decrypted
+ * result) while failures use a separate result class. Hooking only the Decrypted(Message)
+ * constructor means Knot sees the normalized plaintext Message directly without intercepting
+ * SQLite writes or failed-decryption traffic. Database reads remain only as compatibility
+ * fallbacks in the notification hooks.
  */
 public class MessageCaptureHook implements BaseHook {
-  private static final String RECEIVE_MESSAGE_HANDLER = "te8.b3";
-  private static final String RECEIVE_MESSAGE_METHOD = "f";
+  private static final String DECRYPTED_RESULT_CLASS = "te8.b3$b$a";
   private static final String MESSAGE_CLASS = "rg8.od";
 
   private static final int MESSAGE_TYPE_MESSAGE = 1;
@@ -30,29 +31,28 @@ public class MessageCaptureHook implements BaseHook {
   public void hook(KnotConfig config, LoadParam lpparam) throws Throwable {
     if (!config.imageNotificationPreview.enabled) return;
 
-    Class<?> handlerClass = Reflect.findClass(RECEIVE_MESSAGE_HANDLER, lpparam.classLoader);
+    Class<?> decryptedResultClass =
+        Reflect.findClass(DECRYPTED_RESULT_CLASS, lpparam.classLoader);
     Class<?> messageClass = Reflect.findClass(MESSAGE_CLASS, lpparam.classLoader);
+    Constructor<?> decryptedConstructor =
+        Reflect.findConstructorExact(decryptedResultClass, messageClass);
 
-    Knot.hookAll(
-        handlerClass,
-        RECEIVE_MESSAGE_METHOD,
-        chain -> {
-          try {
-            Object message = chain.getArg(0);
-            if (message != null && messageClass.isInstance(message)) {
-              captureMessage(message);
-            }
-          } catch (Throwable t) {
-            Knot.log("Knot: message object capture failed: " + t.getClass().getSimpleName());
-          }
-          return chain.proceed();
-        });
+    Knot.module
+        .hook(decryptedConstructor)
+        .intercept(
+            chain -> {
+              try {
+                Object message = chain.getArg(0);
+                if (message != null && messageClass.isInstance(message)) {
+                  captureMessage(message);
+                }
+              } catch (Throwable t) {
+                Knot.log("Knot: decrypted message capture failed: " + t.getClass().getSimpleName());
+              }
+              return chain.proceed();
+            });
 
-    Knot.log(
-        "Knot: message object capture installed: "
-            + RECEIVE_MESSAGE_HANDLER
-            + "#"
-            + RECEIVE_MESSAGE_METHOD);
+    Knot.log("Knot: decrypted Message capture installed");
   }
 
   private static void captureMessage(Object message) {
@@ -88,7 +88,7 @@ public class MessageCaptureHook implements BaseHook {
         CapturedMessageStore.capture("chat_history", values, serverId);
     if (captured != null) {
       Knot.log(
-          "Knot: message object captured type="
+          "Knot: decrypted Message captured type="
               + (hasText(contentTypeName) ? contentTypeName : "unknown")
               + " text="
               + (hasText(text) ? "present" : "absent")
