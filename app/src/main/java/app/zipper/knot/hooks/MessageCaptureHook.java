@@ -31,8 +31,7 @@ public class MessageCaptureHook implements BaseHook {
   public void hook(KnotConfig config, LoadParam lpparam) throws Throwable {
     if (!config.imageNotificationPreview.enabled) return;
 
-    Class<?> decryptedResultClass =
-        Reflect.findClass(DECRYPTED_RESULT_CLASS, lpparam.classLoader);
+    Class<?> decryptedResultClass = Reflect.findClass(DECRYPTED_RESULT_CLASS, lpparam.classLoader);
     Class<?> messageClass = Reflect.findClass(MESSAGE_CLASS, lpparam.classLoader);
     Constructor<?> decryptedConstructor =
         Reflect.findConstructorExact(decryptedResultClass, messageClass);
@@ -94,6 +93,13 @@ public class MessageCaptureHook implements BaseHook {
               + (hasText(text) ? "present" : "absent")
               + " metadata="
               + (hasText(parameter) ? "present" : "absent"));
+    }
+
+    // Sticker artwork is public CDN content. Starting the download here overlaps it with LINE's
+    // remaining persistence/notification work, so a warm/fast request can be ready for the first
+    // notification rather than requiring a later replacement.
+    if ("STICKER".equals(contentTypeName) && hasText(parameter)) {
+      StickerNotificationPreviewHook.prefetch(parameter);
     }
   }
 
