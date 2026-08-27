@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -60,3 +60,20 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish requested debug APK
+        if: startsWith(github.event.head_commit.message, 'Publish debug APK')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          source_apk="$(find app/build/outputs/apk/debug -type f -name '*.apk' -print -quit)"
+          short_sha="${GITHUB_SHA::7}"
+          release_tag="image-notification-preview-${short_sha}"
+          release_apk="Knot-image-notification-preview-${short_sha}.apk"
+          cp "$source_apk" "$release_apk"
+          gh release create "$release_tag" "$release_apk" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Knot image notification preview ${short_sha}" \
+            --notes "Debug APK built from branch debug/image-notification-preview."
