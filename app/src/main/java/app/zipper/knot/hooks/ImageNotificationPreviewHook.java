@@ -294,7 +294,7 @@ public class ImageNotificationPreviewHook implements BaseHook {
 
       Bitmap bitmap = tryObsPreview(context, messageId, row);
       if (bitmap != null) {
-        repost(context, tag, id, original, bitmap);
+        repost(context, tag, id, original, messageId, bitmap);
         Knot.log("Knot: image preview: notification updated from OBS source=" + row.source);
         return;
       }
@@ -306,7 +306,7 @@ public class ImageNotificationPreviewHook implements BaseHook {
 
       bitmap = awaitLocalBitmap(context, row.localUri);
       if (bitmap != null) {
-        repost(context, tag, id, original, bitmap);
+        repost(context, tag, id, original, messageId, bitmap);
         Knot.log("Knot: image preview: notification updated from local URI source=" + row.source);
         return;
       }
@@ -679,26 +679,31 @@ public class ImageNotificationPreviewHook implements BaseHook {
   }
 
   private static void repost(
-      Context context, String tag, int id, Notification original, Bitmap bitmap) {
+      Context context,
+      String tag,
+      int id,
+      Notification original,
+      String messageId,
+      Bitmap bitmap) {
     try {
-      Notification.Builder builder = Notification.Builder.recoverBuilder(context, original);
-      Bundle marker = new Bundle();
-      marker.putBoolean(REPOST_MARKER, true);
-
-      // StackMessageNotificationsHook requires a non-empty line.message.id. Clear it only on the
-      // Knot repost so the already-built BigPictureStyle is not replaced by MessagingStyle.
-      LineVersion.Config version = LineVersion.get();
-      if (version != null && hasText(version.notification.messageIdExtra)) {
-        marker.putString(version.notification.messageIdExtra, "");
+      NotificationMediaFileStore.Attachment attachment =
+          NotificationMediaFileStore.put(context, messageId, bitmap, "image/jpeg");
+      if (attachment == null) {
+        Knot.log("Knot: image preview: shareable media URI unavailable");
+        return;
       }
 
+      Notification enriched =
+          StackMessageNotificationsHook.buildMediaMessageNotification(
+              context, original, messageId, attachment, bitmap);
+      if (enriched == null) return;
+
+      Notification.Builder builder = Notification.Builder.recoverBuilder(context, enriched);
+      Bundle marker = new Bundle();
+      marker.putBoolean(REPOST_MARKER, true);
+      marker.putBoolean(StickerNotificationPreviewHook.REPOST_MARKER, true);
       builder.addExtras(marker);
       builder.setOnlyAlertOnce(true);
-      builder.setLargeIcon(bitmap);
-      builder.setStyle(
-          new Notification.BigPictureStyle()
-              .bigPicture(bitmap)
-              .setSummaryText(original.extras.getCharSequence(Notification.EXTRA_TEXT)));
 
       NotificationManager nm =
           (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);

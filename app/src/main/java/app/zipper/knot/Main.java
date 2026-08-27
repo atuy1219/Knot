@@ -171,14 +171,16 @@ public class Main extends XposedModule {
       if (options.removeNotificationMuteButton.enabled) {
         applyHook(new NotificationHook(), lpparam);
       }
+      // Register the stack hook first so it runs after the enrichment hooks in the notify()
+      // interceptor chain. MessagingStyle must be the final notification style.
+      if (options.stackMessageNotifications.enabled) {
+        applyHook(new StackMessageNotificationsHook(), lpparam);
+      }
       if (options.imageNotificationPreview.enabled) {
         applyHook(new MessageCaptureHook(), lpparam);
         applyHook(new TextNotificationDatabaseHook(), lpparam);
         applyHook(new StickerNotificationPreviewHook(), lpparam);
         applyHook(new ImageNotificationPreviewHook(), lpparam);
-      }
-      if (options.stackMessageNotifications.enabled) {
-        applyHook(new StackMessageNotificationsHook(), lpparam);
       }
       if (options.lineForegroundKeepAlive.enabled) {
         applyHook(new LineForegroundKeepAliveHook(), lpparam);

@@ -93,7 +93,9 @@ public class StickerNotificationPreviewHook implements BaseHook {
                 if (cached != null) {
                   Context context = Knot.currentApplication();
                   Notification enriched =
-                      context == null ? null : buildPreview(context, notification, cached);
+                      context == null
+                          ? null
+                          : buildPreview(context, notification, messageId, cached);
                   if (enriched != null) {
                     Knot.log(
                         "Knot: sticker preview: pre-notify cache hit ageMs="
@@ -161,7 +163,7 @@ public class StickerNotificationPreviewHook implements BaseHook {
         return;
       }
 
-      Notification enriched = buildPreview(context, original, bitmap);
+      Notification enriched = buildPreview(context, original, messageId, bitmap);
       if (enriched == null) return;
       repost(context, tag, id, enriched);
       Knot.log("Knot: sticker preview: notification updated");
@@ -278,27 +280,26 @@ public class StickerNotificationPreviewHook implements BaseHook {
     return BitmapFactory.decodeByteArray(data, 0, data.length, options);
   }
 
-  private static Notification buildPreview(Context context, Notification original, Bitmap bitmap) {
+  private static Notification buildPreview(
+      Context context, Notification original, String messageId, Bitmap bitmap) {
     try {
-      Notification.Builder builder = Notification.Builder.recoverBuilder(context, original);
+      NotificationMediaFileStore.Attachment attachment =
+          NotificationMediaFileStore.put(context, messageId, bitmap, "image/png");
+      if (attachment == null) {
+        Knot.log("Knot: sticker preview: shareable media URI unavailable");
+        return null;
+      }
+      Notification enriched =
+          StackMessageNotificationsHook.buildMediaMessageNotification(
+              context, original, messageId, attachment, bitmap);
+      if (enriched == null) return null;
+
+      Notification.Builder builder = Notification.Builder.recoverBuilder(context, enriched);
       Bundle marker = new Bundle();
       marker.putBoolean(REPOST_MARKER, true);
       marker.putBoolean(ImageNotificationPreviewHook.REPOST_MARKER, true);
-
-      // BigPictureStyle should survive StackMessageNotificationsHook, so hide the LINE message id
-      // from subsequent Knot notification hooks on the enriched notification only.
-      LineVersion.Config version = LineVersion.get();
-      if (version != null && hasText(version.notification.messageIdExtra)) {
-        marker.putString(version.notification.messageIdExtra, "");
-      }
-
       builder.addExtras(marker);
       builder.setOnlyAlertOnce(true);
-      builder.setLargeIcon(bitmap);
-      builder.setStyle(
-          new Notification.BigPictureStyle()
-              .bigPicture(bitmap)
-              .setSummaryText(original.extras.getCharSequence(Notification.EXTRA_TEXT)));
       return builder.build();
     } catch (Throwable t) {
       Knot.log("Knot: sticker preview build failed: " + t.getClass().getSimpleName());
