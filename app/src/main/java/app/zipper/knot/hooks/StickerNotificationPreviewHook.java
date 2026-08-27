@@ -294,6 +294,7 @@ public class StickerNotificationPreviewHook implements BaseHook {
 
       builder.addExtras(marker);
       builder.setOnlyAlertOnce(true);
+      builder.setLargeIcon(bitmap);
       builder.setStyle(
           new Notification.BigPictureStyle()
               .bigPicture(bitmap)

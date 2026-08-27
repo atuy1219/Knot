@@ -54,6 +54,7 @@ public class ImageNotificationPreviewHook implements BaseHook {
   static final String REPOST_MARKER = "knot.image_notification_preview_repost";
 
   private static final String OBS_BASE = "https://obs-jp.line-apps.com/";
+  private static final String OBS_TOKEN_REQUEST_CLASS_26130 = "rg8.t9";
   private static final int ATTACHMENT_IMAGE = 1;
   private static final int DB_ATTEMPTS = 30;
   private static final int OBS_TOKEN_ATTEMPTS = 20;
@@ -129,7 +130,7 @@ public class ImageNotificationPreviewHook implements BaseHook {
       Class<?> clientClass = Reflect.findClass(version.thrift.talkServiceClientImplClass, classLoader);
       int hooks = 0;
       for (Method method : clientClass.getDeclaredMethods()) {
-        if (!"acquireEncryptedAccessToken".equals(method.getName())) continue;
+        if (!isObsTokenAcquisitionMethod(method)) continue;
         method.setAccessible(true);
         Knot.module
             .hook(method)
@@ -145,6 +146,15 @@ public class ImageNotificationPreviewHook implements BaseHook {
     } catch (Throwable t) {
       Knot.log("Knot: image preview: OBS token capture unavailable: " + t.getClass().getSimpleName());
     }
+  }
+
+  private static boolean isObsTokenAcquisitionMethod(Method method) {
+    if ("acquireEncryptedAccessToken".equals(method.getName())) return true;
+    if (method.getReturnType() != String.class) return false;
+
+    Class<?>[] parameters = method.getParameterTypes();
+    return parameters.length == 1
+        && OBS_TOKEN_REQUEST_CLASS_26130.equals(parameters[0].getName());
   }
 
   private static void captureObsToken(Object result) {
@@ -606,6 +616,7 @@ public class ImageNotificationPreviewHook implements BaseHook {
 
       builder.addExtras(marker);
       builder.setOnlyAlertOnce(true);
+      builder.setLargeIcon(bitmap);
       builder.setStyle(
           new Notification.BigPictureStyle()
               .bigPicture(bitmap)
