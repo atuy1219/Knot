@@ -24,6 +24,7 @@ import java.io.File;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -65,6 +66,8 @@ public class ImageNotificationPreviewHook implements BaseHook {
   private static final int MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
 
   private static volatile String obsAccessToken;
+  private static volatile Method obsAccessTokenGetter;
+  private static volatile Method lineApplicationGetter;
 
   private static final ExecutorService executor =
       Executors.newFixedThreadPool(
@@ -124,6 +127,8 @@ public class ImageNotificationPreviewHook implements BaseHook {
   }
 
   private static void hookObsTokenCapture(ClassLoader classLoader) {
+    resolveObsHeaderGetters(classLoader);
+
     try {
       LineVersion.Config version = LineVersion.get();
       if (version == null || !hasText(version.thrift.talkServiceClientImplClass)) return;
@@ -146,6 +151,61 @@ public class ImageNotificationPreviewHook implements BaseHook {
     } catch (Throwable t) {
       Knot.log("Knot: image preview: OBS token capture unavailable: " + t.getClass().getSimpleName());
     }
+  }
+
+  private static void resolveObsHeaderGetters(ClassLoader classLoader) {
+    try {
+      LineVersion.Config version = LineVersion.get();
+      if (version == null || !hasText(version.thrift.obsAccessHeaderProviderClass)) return;
+
+      Class<?> provider =
+          Reflect.findClass(version.thrift.obsAccessHeaderProviderClass, classLoader);
+      Method tokenGetter =
+          Reflect.findMethodExact(provider, version.thrift.methodGetObsEncryptedAccessToken);
+      if (!isStaticStringGetter(tokenGetter)) {
+        throw new NoSuchMethodException("OBS access token getter has an unexpected signature");
+      }
+      obsAccessTokenGetter = tokenGetter;
+
+      if (hasText(version.thrift.methodGetLineApplication)) {
+        Method applicationGetter =
+            Reflect.findMethodExact(provider, version.thrift.methodGetLineApplication);
+        if (isStaticStringGetter(applicationGetter)) lineApplicationGetter = applicationGetter;
+      }
+
+      // The provider can already be initialized when Knot loads. Read it now, and read it again
+      // immediately before each OBS request so token rotation does not leave a stale header.
+      refreshObsAccessToken();
+      Knot.log("Knot: image preview: direct OBS header getters ready");
+    } catch (Throwable t) {
+      obsAccessTokenGetter = null;
+      lineApplicationGetter = null;
+      Knot.log(
+          "Knot: image preview: direct OBS header getters unavailable: "
+              + t.getClass().getSimpleName());
+    }
+  }
+
+  private static boolean isStaticStringGetter(Method method) {
+    return method != null
+        && Modifier.isStatic(method.getModifiers())
+        && method.getParameterTypes().length == 0
+        && method.getReturnType() == String.class;
+  }
+
+  private static String refreshObsAccessToken() {
+    Method getter = obsAccessTokenGetter;
+    if (getter == null) return obsAccessToken;
+    try {
+      Object result = getter.invoke(null);
+      if (result instanceof String && hasText((String) result)) {
+        // LINE 26.13 sends getOBSEncryptedAccessToken() verbatim as X-Line-Access. Do not split or
+        // normalize this value; encrypted access headers may contain protocol delimiters.
+        obsAccessToken = (String) result;
+      }
+    } catch (Throwable ignored) {
+    }
+    return obsAccessToken;
   }
 
   private static boolean isObsTokenAcquisitionMethod(Method method) {
@@ -340,16 +400,19 @@ public class ImageNotificationPreviewHook implements BaseHook {
 
     List<ObsCandidate> candidates = new ArrayList<>();
     if (hasText(oid) && hasText(sid)) {
+      String encryptedObject =
+          OBS_BASE + "r/talk/" + pathSegment(sid) + "/" + pathSegment(oid);
       candidates.add(
           new ObsCandidate(
-              OBS_BASE + "r/talk/" + pathSegment(sid) + "/" + pathSegment(oid) + "__ud-preview",
+              encryptedObject + "__ud-preview",
+              encryptedObject + "__ud-hash",
               true,
               keyMaterial));
     }
     // Plain media is addressed by the server message id.
     candidates.add(
         new ObsCandidate(
-            OBS_BASE + "r/talk/m/" + pathSegment(messageId) + "/preview", false, null));
+            OBS_BASE + "r/talk/m/" + pathSegment(messageId) + "/preview", null, false, null));
 
     String application = lineApplicationHeader(context);
     String talkMeta = makeTalkMeta(messageId);
@@ -370,7 +433,13 @@ public class ImageNotificationPreviewHook implements BaseHook {
 
           if (hasText(candidate.keyMaterial)) {
             try {
-              data = decryptMedia(data, candidate.keyMaterial);
+              byte[] expectedMac =
+                  downloadObs(candidate.hashUrl, token, application, talkMeta);
+              if (expectedMac == null) {
+                if (!sleepBriefly()) break;
+                continue;
+              }
+              data = decryptMedia(data, candidate.keyMaterial, expectedMac);
             } catch (Throwable ignored) {
               // If the payload unexpectedly is plain, BitmapFactory below still gets a chance.
             }
@@ -389,7 +458,7 @@ public class ImageNotificationPreviewHook implements BaseHook {
 
   private static String awaitObsToken() {
     for (int attempt = 0; attempt < OBS_TOKEN_ATTEMPTS; attempt++) {
-      String token = obsAccessToken;
+      String token = refreshObsAccessToken();
       if (hasText(token)) return token;
       if (!sleepBriefly()) break;
     }
@@ -430,6 +499,15 @@ public class ImageNotificationPreviewHook implements BaseHook {
   }
 
   private static String lineApplicationHeader(Context context) {
+    Method getter = lineApplicationGetter;
+    if (getter != null) {
+      try {
+        Object value = getter.invoke(null);
+        if (value instanceof String && hasText((String) value)) return (String) value;
+      } catch (Throwable ignored) {
+      }
+    }
+
     try {
       PackageInfo info = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
       String version = info.versionName;
@@ -471,8 +549,12 @@ public class ImageNotificationPreviewHook implements BaseHook {
     }
   }
 
-  private static byte[] decryptMedia(byte[] input, String keyMaterialB64) throws Exception {
-    if (input == null || input.length <= 32) throw new IllegalArgumentException("short media");
+  private static byte[] decryptMedia(
+      byte[] input, String keyMaterialB64, byte[] expectedMac) throws Exception {
+    if (input == null || input.length == 0) throw new IllegalArgumentException("empty media");
+    if (expectedMac == null || expectedMac.length != 32) {
+      throw new IllegalArgumentException("invalid media HMAC length");
+    }
     byte[] keyMaterial = Base64.decode(keyMaterialB64, Base64.DEFAULT);
     byte[] derived = hkdfSha256(keyMaterial, "FileEncryption".getBytes(StandardCharsets.UTF_8), 76);
     byte[] encKey = Arrays.copyOfRange(derived, 0, 32);
@@ -480,13 +562,9 @@ public class ImageNotificationPreviewHook implements BaseHook {
     byte[] iv = new byte[16];
     System.arraycopy(derived, 64, iv, 0, 12);
 
-    int cipherLength = input.length - 32;
-    byte[] ciphertext = Arrays.copyOfRange(input, 0, cipherLength);
-    byte[] expectedMac = Arrays.copyOfRange(input, cipherLength, input.length);
-
     Mac hmac = Mac.getInstance("HmacSHA256");
     hmac.init(new SecretKeySpec(macKey, "HmacSHA256"));
-    byte[] actualMac = hmac.doFinal(ciphertext);
+    byte[] actualMac = hmac.doFinal(input);
     if (!MessageDigest.isEqual(expectedMac, actualMac)) {
       throw new SecurityException("invalid media HMAC");
     }
@@ -494,7 +572,7 @@ public class ImageNotificationPreviewHook implements BaseHook {
     Cipher cipher = Cipher.getInstance("AES/CTR/NoPadding");
     cipher.init(
         Cipher.DECRYPT_MODE, new SecretKeySpec(encKey, "AES"), new IvParameterSpec(iv));
-    return cipher.doFinal(ciphertext);
+    return cipher.doFinal(input);
   }
 
   private static byte[] hkdfSha256(byte[] ikm, byte[] info, int length) throws Exception {
@@ -762,11 +840,13 @@ public class ImageNotificationPreviewHook implements BaseHook {
 
   private static final class ObsCandidate {
     final String url;
+    final String hashUrl;
     final boolean privateObject;
     final String keyMaterial;
 
-    ObsCandidate(String url, boolean privateObject, String keyMaterial) {
+    ObsCandidate(String url, String hashUrl, boolean privateObject, String keyMaterial) {
       this.url = url;
+      this.hashUrl = hashUrl;
       this.privateObject = privateObject;
       this.keyMaterial = keyMaterial;
     }

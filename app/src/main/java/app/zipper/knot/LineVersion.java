@@ -320,6 +320,9 @@ public class LineVersion {
     public static class Thrift {
       public String talkServiceClientImplClass = "";
       public String talkServiceClientInterface = "";
+      public String obsAccessHeaderProviderClass = "";
+      public String methodGetObsEncryptedAccessToken = "";
+      public String methodGetLineApplication = "";
       public String v1 = "";
       public String protocolClass = "";
       public String messageClass = "";

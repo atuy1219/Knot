@@ -119,6 +119,11 @@ public class Version26130 {
     v.thrift.talkServiceClientImplClass =
         "jp.naver.line.android.thrift.client.impl.LegacyTalkServiceClientImpl";
     v.thrift.talkServiceClientInterface = "jp.naver.line.android.thrift.client.TalkServiceClient";
+    // e98.b.c() is getOBSEncryptedAccessToken(); e98.b.b() is getXLineApplication().
+    // LINE passes both return values to OBS without modifying them.
+    v.thrift.obsAccessHeaderProviderClass = "e98.b";
+    v.thrift.methodGetObsEncryptedAccessToken = "c";
+    v.thrift.methodGetLineApplication = "b";
     v.thrift.v1 = "Y0";
     v.thrift.protocolClass = "org.apache.thrift.o";
     v.thrift.messageClass = "org.apache.thrift.e";
