@@ -215,7 +215,10 @@ public class ModuleStrings {
 
   public static final String OPT_STACK_MESSAGE_NOTIFICATIONS_LABEL = "通知を上書きしない";
   public static final String OPT_STACK_MESSAGE_NOTIFICATIONS_DESC =
-      "通知を上書きせず、最大7件まで一つの通知の中にまとめて表示します。";
+      "同じトークのメッセージ通知を上書きせず、一つの通知にまとめて表示します。";
+  public static final String OPT_NOTIFICATION_MEDIA_PREVIEW_LABEL = "通知にメディアプレビューを表示";
+  public static final String OPT_NOTIFICATION_MEDIA_PREVIEW_DESC =
+      "画像・スタンプ・絵文字をメッセージ通知内にプレビュー表示します。";
 
   public static final String OPT_REMOVE_NOTIFICATION_MUTE_BUTTON_LABEL = "「通知をオフ」ボタンを非表示";
   public static final String OPT_REMOVE_NOTIFICATION_MUTE_BUTTON_DESC =

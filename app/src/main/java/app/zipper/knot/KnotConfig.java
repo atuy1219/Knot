@@ -107,6 +107,7 @@ public class KnotConfig {
   public final Item showThemeOnSubDevice         = item("show_theme_on_sub_device",         OPT_SHOW_THEME_ON_SUB_DEVICE_LABEL,         OPT_SHOW_THEME_ON_SUB_DEVICE_DESC,         false, Category.DISPLAY,      SEC_THEME);
   public final Item reactionNotification         = item("reaction_notification",            OPT_REACTION_NOTIFICATION_LABEL,            OPT_REACTION_NOTIFICATION_DESC,            false, Category.NOTIFICATION, "");
   public final Item stackMessageNotifications    = item("stack_message_notifications",      OPT_STACK_MESSAGE_NOTIFICATIONS_LABEL,      OPT_STACK_MESSAGE_NOTIFICATIONS_DESC,      false, Category.NOTIFICATION, "");
+  public final Item notificationMediaPreview     = item("notification_media_preview",       OPT_NOTIFICATION_MEDIA_PREVIEW_LABEL,       OPT_NOTIFICATION_MEDIA_PREVIEW_DESC,       false, Category.NOTIFICATION, "");
   public final Item removeNotificationMuteButton = item("remove_notification_mute_button",  OPT_REMOVE_NOTIFICATION_MUTE_BUTTON_LABEL,  OPT_REMOVE_NOTIFICATION_MUTE_BUTTON_DESC,  false, Category.NOTIFICATION, "");
   public final Item experimentalFcmFix           = item("experimental_fcm_fix",             OPT_EXPERIMENTAL_FCM_FIX_LABEL,             OPT_EXPERIMENTAL_FCM_FIX_DESC,             false, Category.NOTIFICATION, "");
   public final Item fcmFixMode                   = item("fcm_fix_mode",                     OPT_FCM_FIX_MODE_LABEL,                     OPT_FCM_FIX_MODE_DESC,                     false, Category.NOTIFICATION, "");

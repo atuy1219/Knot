@@ -466,6 +466,33 @@ public class LineVersion {
       public String messageIdExtra = "line.message.id";
       public String messageNotificationTag = "NOTIFICATION_TAG_MESSAGE";
       public String chatNotificationTag = "jp.naver.line.android.notification.tag.chat";
+      public String decryptedResultClass = "";
+      public String messageClass = "";
+      public String messageServerIdField = "";
+      public String messageContentTypeField = "";
+      public String messageTextField = "";
+      public String messageMetadataField = "";
+      public String chatImageSourceClass = "";
+      public String chatImageCopyInfoClass = "";
+      public String chatImageBridgeHolderClass = "";
+      public String chatImageBridgeGetterMethod = "";
+      public String chatImageRequestBuilderMethod = "";
+      public String glideClass = "";
+      public String glideWithContextMethod = "";
+      public String glideRetrieverMethod = "";
+      public String glideRetrieverGetMethod = "";
+      public String glideAsFileMethod = "";
+      public String glideLoadMethod = "";
+      public String glideSubmitMethod = "";
+      public String glideClearMethod = "";
+      public String stickerUrlBuilderClass = "";
+      public String stickerInitializeMethod = "";
+      public String stickerV2UrlMethod = "";
+      public String stickerVersionUrlMethod = "";
+      public String stickerPackageUrlMethod = "";
+      public String combinationStickerRepositoryClass = "";
+      public String fileProviderHelperClass = "";
+      public String fileProviderUriMethod = "";
     }
 
     public static class NotificationFix {
