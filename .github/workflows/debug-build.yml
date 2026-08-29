@@ -1,0 +1,62 @@
+name: Debug build
+
+on:
+  push:
+    branches:
+      - debug/image-notification-preview
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 9.7.0
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.7.0'
+
+      - name: Set up Android SDK tools
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android 17 SDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --channel=3 "platform-tools" "platforms;android-37.0"
+
+      - name: Format workspace for debug validation
+        run: gradle --no-daemon :app:spotlessApply
+
+      - name: Report formatting drift
+        shell: bash
+        run: |
+          if ! git diff --quiet -- app/src/main/java; then
+            echo "::warning::Feature source needs Spotless formatting; debug build uses the formatted workspace only."
+            git diff -- app/src/main/java
+          fi
+
+      - name: Build debug APK
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Knot-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
