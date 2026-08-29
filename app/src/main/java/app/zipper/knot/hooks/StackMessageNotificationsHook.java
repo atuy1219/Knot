@@ -48,7 +48,7 @@ public class StackMessageNotificationsHook implements BaseHook {
             chain -> {
               if (!config.stackMessageNotifications.enabled) return chain.proceed();
 
-              synchronized (NotificationMediaPreviewHook.class) {
+              synchronized (NotificationMediaPreviewHook.NOTIFICATION_POST_LOCK) {
                 String tag = (String) chain.getArg(0);
                 int id = (int) chain.getArg(1);
                 Notification notification = (Notification) chain.getArg(2);
