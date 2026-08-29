@@ -81,6 +81,9 @@ public class NotificationMediaMessageCaptureHook implements BaseHook {
     String stickerId = metadataString(metadata, "STKID");
     String stickerPackageId = metadataString(metadata, "STKPKGID");
     String stickerVersion = metadataString(metadata, "STKVER");
+    String stickerHash = metadataString(metadata, "STKHASH");
+    String stickerOption = metadataString(metadata, "STKOPT");
+    String combinationStickerId = metadataString(metadata, "CSSTKID");
     String replace = metadataString(metadata, "REPLACE");
     String sticon = sticonSummary(replace);
     boolean hasSticon = sticon != null;
@@ -92,8 +95,13 @@ public class NotificationMediaMessageCaptureHook implements BaseHook {
     } else if ("STICKER".equals(contentTypeName)) {
       LineStickerGlideMediaResolver.StickerMetadata sticker =
           LineStickerGlideMediaResolver.parse(parameter);
-      messageGlideCandidate = sticker != null && sticker.isEmojiLike();
-      kind = messageGlideCandidate ? "EMOJI_LIKE_STICKER" : "STICKER";
+      messageGlideCandidate =
+          sticker != null && (sticker.isEmojiLike() || sticker.isArrangedSticker());
+      if (sticker != null && sticker.isArrangedSticker()) {
+        kind = "ARRANGED_STICKER";
+      } else {
+        kind = sticker != null && sticker.isEmojiLike() ? "EMOJI_LIKE_STICKER" : "STICKER";
+      }
     } else if ("NONE".equals(contentTypeName) && hasSticon) {
       kind = "STICON";
     } else if ("NONE".equals(contentTypeName)) {
@@ -118,6 +126,12 @@ public class NotificationMediaMessageCaptureHook implements BaseHook {
             .append(stickerPackageId)
             .append(" STKVER=")
             .append(stickerVersion)
+            .append(" CSSTKID=")
+            .append(combinationStickerId)
+            .append(" STKHASH=")
+            .append(stickerHash)
+            .append(" STKOPT=")
+            .append(stickerOption)
             .append(" messageGlideCandidate=")
             .append(messageGlideCandidate)
             .append(" hasREPLACE=")
