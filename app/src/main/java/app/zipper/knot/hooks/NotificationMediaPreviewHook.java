@@ -10,14 +10,22 @@ import app.zipper.knot.LineVersion;
 import app.zipper.knot.LoadParam;
 import app.zipper.knot.Main;
 import app.zipper.knot.Reflect;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 public class NotificationMediaPreviewHook implements BaseHook {
   static final String REPOST_MARKER = "knot.notification_media_preview_repost";
 
   private static final int ACTIVE_LOOKUP_ATTEMPTS = 4;
   private static final long ACTIVE_LOOKUP_DELAY_MS = 50L;
+  private static final long REPOST_DEBOUNCE_MS = 500L;
   private static final ExecutorService executor =
       Executors.newFixedThreadPool(
           4,
@@ -26,6 +34,14 @@ public class NotificationMediaPreviewHook implements BaseHook {
             thread.setDaemon(true);
             return thread;
           });
+  private static final ScheduledExecutorService repostExecutor =
+      Executors.newSingleThreadScheduledExecutor(
+          runnable -> {
+            Thread thread = new Thread(runnable, "Knot-NotificationMediaRepost");
+            thread.setDaemon(true);
+            return thread;
+          });
+  private static final Map<RepostKey, PendingRepost> pendingReposts = new HashMap<>();
 
   @Override
   public void hook(KnotConfig config, LoadParam lpparam) throws Throwable {
@@ -146,31 +162,90 @@ public class NotificationMediaPreviewHook implements BaseHook {
             NotificationMediaFileStore.constrainForMessagingStyle(context, messageId, attachment);
       }
 
-      Notification active = awaitActiveNotification(context, tag, id);
-      if (active == null || active.extras == null) return;
-
-      boolean stackEnabled = Main.options.stackMessageNotifications.enabled;
-      if (!stackEnabled) {
-        LineVersion.Config currentVersion = LineVersion.get();
-        if (currentVersion == null) return;
-        String activeMessageId =
-            stringExtra(active.extras, currentVersion.notification.messageIdExtra);
-        if (!messageId.equals(activeMessageId)) return;
+      RepostKey key = new RepostKey(tag, id);
+      PendingRepost pending = pendingReposts.get(key);
+      if (pending == null) {
+        pending = new PendingRepost(context, tag, id);
+        pendingReposts.put(key, pending);
       }
-
-      Notification enriched =
-          StackMessageNotificationsHook.buildMediaMessageNotification(
-              context, tag, id, active, original, messageId, attachment, stackEnabled);
-      if (enriched == null) return;
-
-      Notification.Builder builder = Notification.Builder.recoverBuilder(context, enriched);
-      Bundle marker = new Bundle();
-      marker.putBoolean(REPOST_MARKER, true);
-      builder.addExtras(marker);
-      builder.setOnlyAlertOnce(true);
-      repost(context, tag, id, builder.build());
+      pending.items.add(new PendingMedia(original, messageId, attachment));
+      if (pending.future != null) pending.future.cancel(false);
+      long generation = ++pending.generation;
+      pending.future =
+          repostExecutor.schedule(
+              () -> flushPending(key, generation), REPOST_DEBOUNCE_MS, TimeUnit.MILLISECONDS);
     } catch (Throwable t) {
       Knot.log("Knot: notification media preview failed: " + t.getClass().getSimpleName());
+    }
+  }
+
+  private static void flushPending(RepostKey key, long generation) {
+    synchronized (NotificationMediaPreviewHook.class) {
+      PendingRepost pending = pendingReposts.get(key);
+      if (pending == null || pending.generation != generation || pending.items.isEmpty()) return;
+      pendingReposts.remove(key);
+
+      try {
+        Context context = pending.context;
+        Notification active = awaitActiveNotification(context, pending.tag, pending.id);
+        if (active == null || active.extras == null) return;
+
+        boolean stackEnabled = Main.options.stackMessageNotifications.enabled;
+        Notification enriched = active;
+        boolean changed = false;
+        if (stackEnabled) {
+          for (PendingMedia item : pending.items) {
+            Notification built =
+                StackMessageNotificationsHook.buildMediaMessageNotification(
+                    context,
+                    pending.tag,
+                    pending.id,
+                    enriched,
+                    item.original,
+                    item.messageId,
+                    item.attachment,
+                    true);
+            if (built != null) {
+              enriched = built;
+              changed = true;
+            }
+          }
+        } else {
+          LineVersion.Config currentVersion = LineVersion.get();
+          if (currentVersion == null) return;
+          String activeMessageId =
+              stringExtra(active.extras, currentVersion.notification.messageIdExtra);
+          for (int i = pending.items.size() - 1; i >= 0; i--) {
+            PendingMedia item = pending.items.get(i);
+            if (!item.messageId.equals(activeMessageId)) continue;
+            Notification built =
+                StackMessageNotificationsHook.buildMediaMessageNotification(
+                    context,
+                    pending.tag,
+                    pending.id,
+                    active,
+                    item.original,
+                    item.messageId,
+                    item.attachment,
+                    false);
+            if (built != null) {
+              enriched = built;
+              changed = true;
+            }
+            break;
+          }
+        }
+        if (!changed) return;
+
+        Notification.Builder builder = Notification.Builder.recoverBuilder(context, enriched);
+        Bundle marker = new Bundle();
+        marker.putBoolean(REPOST_MARKER, true);
+        builder.addExtras(marker);
+        builder.setOnlyAlertOnce(true);
+        repost(context, pending.tag, pending.id, builder.build());
+      } catch (Throwable t) {
+        Knot.log("Knot: notification media preview failed: " + t.getClass().getSimpleName());
+      }
     }
   }
 
@@ -225,5 +300,58 @@ public class NotificationMediaPreviewHook implements BaseHook {
 
   private static boolean hasText(String value) {
     return value != null && !value.isEmpty();
+  }
+
+  private static final class RepostKey {
+    final String tag;
+    final int id;
+
+    RepostKey(String tag, int id) {
+      this.tag = tag;
+      this.id = id;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+      if (this == obj) return true;
+      if (!(obj instanceof RepostKey)) return false;
+      RepostKey other = (RepostKey) obj;
+      return id == other.id && (tag == null ? other.tag == null : tag.equals(other.tag));
+    }
+
+    @Override
+    public int hashCode() {
+      return 31 * id + (tag == null ? 0 : tag.hashCode());
+    }
+  }
+
+  private static final class PendingRepost {
+    final Context context;
+    final String tag;
+    final int id;
+    final List<PendingMedia> items = new ArrayList<>();
+    long generation;
+    ScheduledFuture<?> future;
+
+    PendingRepost(Context context, String tag, int id) {
+      this.context = context;
+      this.tag = tag;
+      this.id = id;
+    }
+  }
+
+  private static final class PendingMedia {
+    final Notification original;
+    final String messageId;
+    final NotificationMediaFileStore.Attachment attachment;
+
+    PendingMedia(
+        Notification original,
+        String messageId,
+        NotificationMediaFileStore.Attachment attachment) {
+      this.original = original;
+      this.messageId = messageId;
+      this.attachment = attachment;
+    }
   }
 }
