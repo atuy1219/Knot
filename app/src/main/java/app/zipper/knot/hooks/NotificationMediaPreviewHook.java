@@ -198,18 +198,7 @@ public class NotificationMediaPreviewHook implements BaseHook {
       pendingImageGroups.put(key, pending);
     }
 
-    boolean replaced = false;
-    for (int i = 0; i < pending.items.size(); i++) {
-      if (messageId.equals(pending.items.get(i).messageId)) {
-        pending.items.set(i, new PendingMedia(original, messageId, attachment, group.sequence));
-        replaced = true;
-        break;
-      }
-    }
-    if (!replaced) {
-      pending.items.add(new PendingMedia(original, messageId, attachment, group.sequence));
-    }
-
+    pending.items.add(new PendingMedia(original, messageId, attachment, group.sequence));
     if (pending.future != null) pending.future.cancel(false);
     long generation = ++pending.generation;
     pending.future =
@@ -235,7 +224,7 @@ public class NotificationMediaPreviewHook implements BaseHook {
   }
 
   private static void buildAndRepost(
-      Context context, String tag, int id, List<PendingMedia> items) throws Exception {
+      Context context, String tag, int id, List<PendingMedia> items) {
     Notification active = awaitActiveNotification(context, tag, id);
     if (active == null || active.extras == null) return;
 
