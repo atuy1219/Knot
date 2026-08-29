@@ -226,6 +226,20 @@ public class Version26130 {
     v.notification.stickerVersionUrlMethod = "s";
     v.notification.stickerPackageUrlMethod = "A";
     v.notification.combinationStickerRepositoryClass = "dj5.k";
+    v.notification.combinationStickerInitializeMethod = "G";
+    v.notification.combinationStickerServiceField = "d";
+    v.notification.combinationStickerMetadataMethod = "a";
+    v.notification.combinationStickerResponseStringMethod = "h";
+    v.notification.sticonImageRepositoryClass = "qa7.b";
+    v.notification.sticonImageRepositoryFactoryField = "a";
+    v.notification.sticonImageRepositoryFactoryMethod = "a";
+    v.notification.sticonImageRepositoryCacheMethod = "a";
+    v.notification.sticonImageRepositoryBatchMethod = "b";
+    v.notification.sticonObservableBlockingFirstMethod = "b";
+    v.notification.sticonImageKeyClass = "om5.h";
+    v.notification.sticonPaidProductClass = "om5.r$b";
+    v.notification.sticonPaidClass = "om5.d$d";
+    v.notification.sticonOptionTypeClass = "om5.j";
     v.notification.fileProviderHelperClass =
         "jp.naver.line.android.common.LineCommonFileProvider$a";
     v.notification.fileProviderUriMethod = "d";

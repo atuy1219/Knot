@@ -19,9 +19,10 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -33,7 +34,15 @@ final class LineCombinationStickerMediaResolver {
   private static final int MAX_METADATA_BYTES = 1024 * 1024;
   private static final int MAX_LAYOUTS = 16;
   private static final int MAX_CANVAS_DIMENSION = 768;
-  private static final Map<String, String> metadataMemoryCache = new ConcurrentHashMap<>();
+  private static final int MAX_METADATA_CACHE_ENTRIES = 64;
+  private static final Map<String, String> metadataMemoryCache =
+      Collections.synchronizedMap(
+          new LinkedHashMap<String, String>(16, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+              return size() > MAX_METADATA_CACHE_ENTRIES;
+            }
+          });
 
   private static volatile ServiceHolder serviceHolder;
 
@@ -125,21 +134,16 @@ final class LineCombinationStickerMediaResolver {
     Object response = null;
     try {
       ClassLoader loader = context.getClassLoader();
+      LineVersion.Config version = LineVersion.get();
+      if (version == null) return null;
+      LineVersion.Config.Notification config = version.notification;
       ServiceHolder holder = lineService(context, loader);
-      if (holder == null) return null;
+      if (holder == null || !hasText(config.combinationStickerMetadataMethod)) return null;
 
       Class<?> continuationClass = Class.forName("kotlin.coroutines.Continuation", false, loader);
-      Method request = null;
-      for (Method method : holder.apiClass.getMethods()) {
-        Class<?>[] parameters = method.getParameterTypes();
-        if (parameters.length == 2
-            && parameters[0] == String.class
-            && parameters[1] == continuationClass) {
-          request = method;
-          break;
-        }
-      }
-      if (request == null) return null;
+      Method request =
+          holder.apiClass.getMethod(
+              config.combinationStickerMetadataMethod, String.class, continuationClass);
 
       Object coroutineContext = emptyCoroutineContext(continuationClass, loader);
       if (coroutineContext == null) return null;
@@ -185,7 +189,9 @@ final class LineCombinationStickerMediaResolver {
         return null;
       }
 
-      return response == null ? null : responseString(response);
+      return response == null
+          ? null
+          : responseString(response, config.combinationStickerResponseStringMethod);
     } catch (Throwable ignored) {
       return null;
     } finally {
@@ -207,13 +213,19 @@ final class LineCombinationStickerMediaResolver {
 
       LineVersion.Config version = LineVersion.get();
       if (version == null) return null;
-      String className = version.notification.combinationStickerRepositoryClass;
-      if (!hasText(className)) return null;
+      LineVersion.Config.Notification config = version.notification;
+      String className = config.combinationStickerRepositoryClass;
+      if (!hasText(className)
+          || !hasText(config.combinationStickerInitializeMethod)
+          || !hasText(config.combinationStickerServiceField)) return null;
       try {
         Class<?> repositoryClass = Class.forName(className, false, loader);
         Object repository = repositoryClass.getDeclaredConstructor().newInstance();
-        repositoryClass.getMethod("G", Context.class).invoke(repository, context);
-        Field serviceField = repositoryClass.getDeclaredField("d");
+        repositoryClass
+            .getMethod(config.combinationStickerInitializeMethod, Context.class)
+            .invoke(repository, context);
+        Field serviceField =
+            repositoryClass.getDeclaredField(config.combinationStickerServiceField);
         serviceField.setAccessible(true);
         Object service = serviceField.get(repository);
         if (service == null) return null;
@@ -267,23 +279,15 @@ final class LineCombinationStickerMediaResolver {
     return value != null && "COROUTINE_SUSPENDED".equals(String.valueOf(value));
   }
 
-  private static String responseString(Object response) {
-    for (String name : new String[] {"g", "h"}) {
-      try {
-        Method method = response.getClass().getMethod(name);
-        if (method.getReturnType() == String.class) return (String) method.invoke(response);
-      } catch (Throwable ignored) {
-      }
+  private static String responseString(Object response, String methodName) {
+    if (response == null || !hasText(methodName)) return null;
+    try {
+      Method method = response.getClass().getMethod(methodName);
+      if (method.getParameterCount() != 0 || method.getReturnType() != String.class) return null;
+      return (String) method.invoke(response);
+    } catch (Throwable ignored) {
+      return null;
     }
-    for (Method method : response.getClass().getMethods()) {
-      if (method.getParameterCount() != 0 || method.getReturnType() != String.class) continue;
-      if ("toString".equals(method.getName())) continue;
-      try {
-        return (String) method.invoke(response);
-      } catch (Throwable ignored) {
-      }
-    }
-    return null;
   }
 
   private static CombinationSpec parseMetadata(String json) {

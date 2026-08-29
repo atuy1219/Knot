@@ -491,6 +491,20 @@ public class LineVersion {
       public String stickerVersionUrlMethod = "";
       public String stickerPackageUrlMethod = "";
       public String combinationStickerRepositoryClass = "";
+      public String combinationStickerInitializeMethod = "";
+      public String combinationStickerServiceField = "";
+      public String combinationStickerMetadataMethod = "";
+      public String combinationStickerResponseStringMethod = "";
+      public String sticonImageRepositoryClass = "";
+      public String sticonImageRepositoryFactoryField = "";
+      public String sticonImageRepositoryFactoryMethod = "";
+      public String sticonImageRepositoryCacheMethod = "";
+      public String sticonImageRepositoryBatchMethod = "";
+      public String sticonObservableBlockingFirstMethod = "";
+      public String sticonImageKeyClass = "";
+      public String sticonPaidProductClass = "";
+      public String sticonPaidClass = "";
+      public String sticonOptionTypeClass = "";
       public String fileProviderHelperClass = "";
       public String fileProviderUriMethod = "";
     }
