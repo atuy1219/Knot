@@ -96,8 +96,7 @@ final class LineCombinationStickerMediaResolver {
     try {
       output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
       Canvas canvas = new Canvas(output);
-      Paint paint =
-          new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+      Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
 
       for (int i = 0; i < spec.parts.size(); i++) {
         PartSpec part = spec.parts.get(i);
@@ -213,8 +212,7 @@ final class LineCombinationStickerMediaResolver {
       ServiceHolder holder = lineService(context, loader);
       if (holder == null) return null;
 
-      Class<?> continuationClass =
-          Class.forName("kotlin.coroutines.Continuation", false, loader);
+      Class<?> continuationClass = Class.forName("kotlin.coroutines.Continuation", false, loader);
       Method request = null;
       for (Method method : holder.apiClass.getMethods()) {
         Class<?>[] parameters = method.getParameterTypes();
@@ -438,10 +436,8 @@ final class LineCombinationStickerMediaResolver {
   }
 
   private static String readText(File file) {
-    if (file == null
-        || !file.isFile()
-        || file.length() <= 0L
-        || file.length() > MAX_METADATA_BYTES) return null;
+    if (file == null || !file.isFile() || file.length() <= 0L || file.length() > MAX_METADATA_BYTES)
+      return null;
     try (FileInputStream in = new FileInputStream(file);
         ByteArrayOutputStream out = new ByteArrayOutputStream((int) file.length())) {
       byte[] buffer = new byte[4096];
