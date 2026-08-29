@@ -7,23 +7,12 @@ import java.lang.reflect.Method;
 import org.json.JSONObject;
 
 final class LineStickerGlideMediaResolver {
-  private static final long ARRANGED_STICKER_RETRY_DELAY_MS = 500L;
-
   private LineStickerGlideMediaResolver() {}
 
   static NotificationMediaFileStore.Attachment acquire(Context context, StickerMetadata metadata) {
     if (context == null || metadata == null) return null;
 
     if (metadata.isArrangedSticker()) {
-      NotificationMediaFileStore.Attachment attachment =
-          LineCombinationStickerMediaResolver.acquire(context, metadata);
-      if (attachment != null) return attachment;
-      try {
-        Thread.sleep(ARRANGED_STICKER_RETRY_DELAY_MS);
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        return null;
-      }
       return LineCombinationStickerMediaResolver.acquire(context, metadata);
     }
 
