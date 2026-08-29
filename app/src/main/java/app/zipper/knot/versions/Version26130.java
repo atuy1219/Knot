@@ -201,6 +201,33 @@ public class Version26130 {
     v.notification.chatHistoryRequestClass = "com.linecorp.line.chat.request.ChatHistoryRequest";
     v.notification.chatHistoryActivityLaunchActivityClass =
         "jp.naver.line.android.activity.chathistory.ChatHistoryActivityLaunchActivity";
+    v.notification.decryptedResultClass = "te8.b3$b$a";
+    v.notification.messageClass = "rg8.od";
+    v.notification.messageServerIdField = "d";
+    v.notification.messageContentTypeField = "j";
+    v.notification.messageTextField = "g";
+    v.notification.messageMetadataField = "k";
+    v.notification.chatImageSourceClass = "hq3.a";
+    v.notification.chatImageCopyInfoClass = "jd8.a";
+    v.notification.chatImageBridgeHolderClass = "ak3.i";
+    v.notification.chatImageBridgeGetterMethod = "c";
+    v.notification.chatImageRequestBuilderMethod = "k";
+    v.notification.glideClass = "com.bumptech.glide.c";
+    v.notification.glideWithContextMethod = "e";
+    v.notification.glideRetrieverMethod = "c";
+    v.notification.glideRetrieverGetMethod = "f";
+    v.notification.glideAsFileMethod = "k";
+    v.notification.glideLoadMethod = "b0";
+    v.notification.glideSubmitMethod = "g0";
+    v.notification.glideClearMethod = "n";
+    v.notification.stickerUrlBuilderClass = "rl5.o";
+    v.notification.stickerInitializeMethod = "G";
+    v.notification.stickerV2UrlMethod = "w";
+    v.notification.stickerVersionUrlMethod = "s";
+    v.notification.stickerPackageUrlMethod = "A";
+    v.notification.fileProviderHelperClass =
+        "jp.naver.line.android.common.LineCommonFileProvider$a";
+    v.notification.fileProviderUriMethod = "d";
 
     v.notificationFix.lineFcmServiceClass =
         "jp.naver.line.android.service.fcm.LineFirebaseMessagingService";

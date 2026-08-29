@@ -178,6 +178,10 @@ public class Main extends XposedModule {
       if (options.stackMessageNotifications.enabled) {
         applyHook(new StackMessageNotificationsHook(), lpparam);
       }
+      if (options.notificationMediaPreview.enabled) {
+        applyHook(new NotificationMediaMessageCaptureHook(), lpparam);
+        applyHook(new NotificationMediaPreviewHook(), lpparam);
+      }
       if (options.lineForegroundKeepAlive.enabled) {
         applyHook(new LineForegroundKeepAliveHook(), lpparam);
       }
