@@ -48,18 +48,20 @@ public class StackMessageNotificationsHook implements BaseHook {
             chain -> {
               if (!config.stackMessageNotifications.enabled) return chain.proceed();
 
-              String tag = (String) chain.getArg(0);
-              int id = (int) chain.getArg(1);
-              Notification notification = (Notification) chain.getArg(2);
-              if (notification.extras != null
-                  && notification.extras.getBoolean(
-                      NotificationMediaPreviewHook.REPOST_MARKER, false)) {
-                return chain.proceed();
+              synchronized (NotificationMediaPreviewHook.class) {
+                String tag = (String) chain.getArg(0);
+                int id = (int) chain.getArg(1);
+                Notification notification = (Notification) chain.getArg(2);
+                if (notification.extras != null
+                    && notification.extras.getBoolean(
+                        NotificationMediaPreviewHook.REPOST_MARKER, false)) {
+                  return chain.proceed();
+                }
+                Notification stacked =
+                    mergeNotification(Knot.currentApplication(), tag, id, notification);
+                if (stacked == notification) return chain.proceed();
+                return chain.proceed(new Object[] {tag, id, stacked});
               }
-              Notification stacked =
-                  mergeNotification(Knot.currentApplication(), tag, id, notification);
-              if (stacked == notification) return chain.proceed();
-              return chain.proceed(new Object[] {tag, id, stacked});
             });
 
     Knot.module
