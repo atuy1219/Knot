@@ -26,8 +26,6 @@ public class NotificationMediaPreviewHook implements BaseHook {
   static final String REPOST_MARKER = "knot.notification_media_preview_repost";
   static final Object NOTIFICATION_POST_LOCK = new Object();
 
-  private static final int ACTIVE_LOOKUP_ATTEMPTS = 4;
-  private static final long ACTIVE_LOOKUP_DELAY_MS = 50L;
   private static final int LARGE_IMAGE_GROUP_MIN_SIZE = 5;
   private static final long LARGE_IMAGE_REPOST_DELAY_MS = 1_000L;
   private static final ExecutorService executor =
@@ -230,7 +228,7 @@ public class NotificationMediaPreviewHook implements BaseHook {
 
   private static void buildAndRepost(
       Context context, String tag, int id, List<PendingMedia> items) {
-    Notification active = awaitActiveNotification(context, tag, id);
+    Notification active = StackMessageNotificationsHook.activeNotification(context, tag, id);
     if (active == null || active.extras == null) return;
 
     boolean stackEnabled = Main.options.stackMessageNotifications.enabled;
@@ -286,21 +284,6 @@ public class NotificationMediaPreviewHook implements BaseHook {
     builder.addExtras(marker);
     builder.setOnlyAlertOnce(true);
     repost(context, tag, id, builder.build());
-  }
-
-  private static Notification awaitActiveNotification(Context context, String tag, int id) {
-    for (int attempt = 0; attempt < ACTIVE_LOOKUP_ATTEMPTS; attempt++) {
-      Notification active = StackMessageNotificationsHook.activeNotification(context, tag, id);
-      if (active != null) return active;
-      if (attempt + 1 >= ACTIVE_LOOKUP_ATTEMPTS) break;
-      try {
-        Thread.sleep(ACTIVE_LOOKUP_DELAY_MS);
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        return null;
-      }
-    }
-    return null;
   }
 
   private static boolean isCandidate(String tag, Notification notification) {
