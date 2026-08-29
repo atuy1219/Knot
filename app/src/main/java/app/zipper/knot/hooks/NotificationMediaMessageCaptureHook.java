@@ -95,8 +95,7 @@ public class NotificationMediaMessageCaptureHook implements BaseHook {
     } else if ("STICKER".equals(contentTypeName)) {
       LineStickerGlideMediaResolver.StickerMetadata sticker =
           LineStickerGlideMediaResolver.parse(parameter);
-      messageGlideCandidate =
-          sticker != null && (sticker.isEmojiLike() || sticker.isArrangedSticker());
+      messageGlideCandidate = sticker != null && sticker.isEmojiLike();
       if (sticker != null && sticker.isArrangedSticker()) {
         kind = "ARRANGED_STICKER";
       } else {
