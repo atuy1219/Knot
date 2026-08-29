@@ -108,7 +108,7 @@ public class NotificationMediaPreviewHook implements BaseHook {
       LineStickerGlideMediaResolver.StickerMetadata sticker =
           LineStickerGlideMediaResolver.parse(captured.parameter);
       if (sticker != null) {
-        executor.execute(() -> updateSticker(tag, id, notification, messageId, captured, sticker));
+        executor.execute(() -> updateSticker(tag, id, notification, messageId, sticker));
       }
       return;
     }
@@ -141,7 +141,6 @@ public class NotificationMediaPreviewHook implements BaseHook {
       int id,
       Notification original,
       String messageId,
-      NotificationMediaCaptureStore.MessageData captured,
       LineStickerGlideMediaResolver.StickerMetadata sticker) {
     Context context = Knot.currentApplication();
     if (context == null) return;
