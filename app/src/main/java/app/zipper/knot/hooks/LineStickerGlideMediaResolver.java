@@ -1,12 +1,15 @@
 package app.zipper.knot.hooks;
 
 import android.content.Context;
+import app.zipper.knot.Knot;
 import app.zipper.knot.LineVersion;
 import java.io.File;
 import java.lang.reflect.Method;
 import org.json.JSONObject;
 
 final class LineStickerGlideMediaResolver {
+  private static final long ARRANGED_RETRY_DELAY_MS = 500L;
+
   private LineStickerGlideMediaResolver() {}
 
   static NotificationMediaFileStore.Attachment acquire(
@@ -16,6 +19,21 @@ final class LineStickerGlideMediaResolver {
     if (context == null || metadata == null) return null;
 
     if (metadata.isArrangedSticker()) {
+      NotificationMediaFileStore.Attachment attachment =
+          LineCombinationStickerMediaResolver.acquire(context, metadata);
+      if (attachment != null) return attachment;
+
+      Knot.log(
+          "[ArrangedSticker] retry scheduled CSSTKID="
+              + metadata.combinationStickerId
+              + " delayMs="
+              + ARRANGED_RETRY_DELAY_MS);
+      try {
+        Thread.sleep(ARRANGED_RETRY_DELAY_MS);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        return null;
+      }
       return LineCombinationStickerMediaResolver.acquire(context, metadata);
     }
 
