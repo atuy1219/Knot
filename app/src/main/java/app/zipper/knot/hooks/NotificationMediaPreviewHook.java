@@ -24,6 +24,7 @@ import org.json.JSONObject;
 
 public class NotificationMediaPreviewHook implements BaseHook {
   static final String REPOST_MARKER = "knot.notification_media_preview_repost";
+  static final Object NOTIFICATION_POST_LOCK = new Object();
 
   private static final int ACTIVE_LOOKUP_ATTEMPTS = 4;
   private static final long ACTIVE_LOOKUP_DELAY_MS = 50L;
@@ -162,7 +163,7 @@ public class NotificationMediaPreviewHook implements BaseHook {
     if (attachment != null) postMedia(context, tag, id, original, messageId, attachment, true);
   }
 
-  private static synchronized void postMedia(
+  private static void postMedia(
       Context context,
       String tag,
       int id,
@@ -177,7 +178,9 @@ public class NotificationMediaPreviewHook implements BaseHook {
       }
       List<PendingMedia> items = new ArrayList<>(1);
       items.add(new PendingMedia(original, messageId, attachment, 0));
-      buildAndRepost(context, tag, id, items);
+      synchronized (NOTIFICATION_POST_LOCK) {
+        buildAndRepost(context, tag, id, items);
+      }
     } catch (Throwable t) {
       Knot.log("Knot: notification media preview failed: " + t.getClass().getSimpleName());
     }
@@ -209,17 +212,20 @@ public class NotificationMediaPreviewHook implements BaseHook {
   }
 
   private static void flushLargeImageGroup(ImageGroupKey key, long generation) {
+    PendingImageGroup pending;
     synchronized (NotificationMediaPreviewHook.class) {
-      PendingImageGroup pending = pendingImageGroups.get(key);
+      pending = pendingImageGroups.get(key);
       if (pending == null || pending.generation != generation || pending.items.isEmpty()) return;
       pendingImageGroups.remove(key);
-      pending.items.sort((left, right) -> Integer.compare(left.sequence, right.sequence));
+    }
+    pending.items.sort((left, right) -> Integer.compare(left.sequence, right.sequence));
 
-      try {
+    try {
+      synchronized (NOTIFICATION_POST_LOCK) {
         buildAndRepost(pending.context, pending.tag, pending.id, pending.items);
-      } catch (Throwable t) {
-        Knot.log("Knot: notification media preview failed: " + t.getClass().getSimpleName());
       }
+    } catch (Throwable t) {
+      Knot.log("Knot: notification media preview failed: " + t.getClass().getSimpleName());
     }
   }
 
