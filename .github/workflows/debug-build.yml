@@ -1,29 +1,22 @@
-name: Feature media refactor validation
+name: Debug build
 
 on:
   push:
     branches:
       - debug/image-notification-preview
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  refactor:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    steps:
-      - name: Checkout feature branch
-        uses: actions/checkout@v5
-        with:
-          ref: feature/image-notification-preview
-          fetch-depth: 0
 
-      - name: Apply refactor
-        shell: bash
-        run: |
-          echo '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' | base64 -d | gzip -d > /tmp/refactor_feature.py
-          python3 /tmp/refactor_feature.py
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -34,7 +27,7 @@ jobs:
       - name: Set up Gradle 9.7.0
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.7.0'
+          gradle-version: 9.7.0
 
       - name: Set up Android SDK tools
         uses: android-actions/setup-android@v3
@@ -42,6 +35,7 @@ jobs:
           packages: platform-tools
 
       - name: Install Android 17 SDK
+        shell: bash
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager --channel=3 "platform-tools" "platforms;android-37.0"
@@ -49,21 +43,13 @@ jobs:
       - name: Format
         run: gradle --no-daemon :app:spotlessApply
 
-      - name: Validate removed legacy paths
-        shell: bash
-        run: |
-          ! grep -R --line-number 'packageId == 5L\|isEmojiLike()\|sticonshop/v1/sticon.*iPhone' app/src/main/java/app/zipper/knot/hooks
-          git diff --check
-
       - name: Build
-        run: gradle --no-daemon :app:assembleDebug
+        run: gradle --no-daemon :app:assembleDebug --stacktrace
 
-      - name: Commit feature change
-        shell: bash
-        run: |
-          git config user.name "Atuy"
-          git config user.email "130917473+atuy1219@users.noreply.github.com"
-          git add app/src/main/java/app/zipper/knot/LineVersion.java app/src/main/java/app/zipper/knot/versions/Version26130.java app/src/main/java/app/zipper/knot/versions/Version26131.java app/src/main/java/app/zipper/knot/hooks/LineCombinationStickerMediaResolver.java app/src/main/java/app/zipper/knot/hooks/LineStickerGlideMediaResolver.java app/src/main/java/app/zipper/knot/hooks/LineSticonMediaResolver.java app/src/main/java/app/zipper/knot/hooks/NotificationMediaPreviewHook.java
-          git diff --cached --check
-          git commit -m "通知メディアのLINE内部経路とバージョン依存を整理"
-          git push origin HEAD:feature/image-notification-preview
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Knot-debug-${{ github.sha }}
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
