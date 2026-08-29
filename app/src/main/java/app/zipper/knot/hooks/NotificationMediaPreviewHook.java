@@ -115,7 +115,7 @@ public class NotificationMediaPreviewHook implements BaseHook {
     Context context = Knot.currentApplication();
     if (context == null) return;
     NotificationMediaFileStore.Attachment attachment =
-        LineStickerGlideMediaResolver.acquire(context, captured, sticker);
+        LineStickerGlideMediaResolver.acquire(context, sticker);
     if (attachment != null) postMedia(context, tag, id, original, messageId, attachment, false);
   }
 
@@ -142,7 +142,8 @@ public class NotificationMediaPreviewHook implements BaseHook {
       boolean constrain) {
     try {
       if (constrain) {
-        attachment = MessagingStyleImageScaler.constrain(context, messageId, attachment);
+        attachment =
+            NotificationMediaFileStore.constrainForMessagingStyle(context, messageId, attachment);
       }
 
       Notification active = awaitActiveNotification(context, tag, id);

@@ -1,46 +1,30 @@
 package app.zipper.knot.hooks;
 
 import android.content.Context;
-import app.zipper.knot.Knot;
 import app.zipper.knot.LineVersion;
 import java.io.File;
 import java.lang.reflect.Method;
 import org.json.JSONObject;
 
 final class LineStickerGlideMediaResolver {
-  private static final long ARRANGED_RETRY_DELAY_MS = 500L;
+  private static final long ARRANGED_STICKER_RETRY_DELAY_MS = 500L;
 
   private LineStickerGlideMediaResolver() {}
 
-  static NotificationMediaFileStore.Attachment acquire(
-      Context context,
-      NotificationMediaCaptureStore.MessageData captured,
-      StickerMetadata metadata) {
+  static NotificationMediaFileStore.Attachment acquire(Context context, StickerMetadata metadata) {
     if (context == null || metadata == null) return null;
 
     if (metadata.isArrangedSticker()) {
       NotificationMediaFileStore.Attachment attachment =
           LineCombinationStickerMediaResolver.acquire(context, metadata);
       if (attachment != null) return attachment;
-
-      Knot.log(
-          "[ArrangedSticker] retry scheduled CSSTKID="
-              + metadata.combinationStickerId
-              + " delayMs="
-              + ARRANGED_RETRY_DELAY_MS);
       try {
-        Thread.sleep(ARRANGED_RETRY_DELAY_MS);
+        Thread.sleep(ARRANGED_STICKER_RETRY_DELAY_MS);
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
         return null;
       }
       return LineCombinationStickerMediaResolver.acquire(context, metadata);
-    }
-
-    if (metadata.isEmojiLike() && captured != null && captured.decryptedMessage != null) {
-      NotificationMediaFileStore.Attachment direct =
-          acquireFromMessage(context, captured.decryptedMessage);
-      if (direct != null) return direct;
     }
 
     return attachmentFromFile(context, requestStickerFile(context, metadata));
@@ -74,15 +58,6 @@ final class LineStickerGlideMediaResolver {
           firstLong(json, "STKVER", "stickerPackageVer", "sticker_package_ver"),
           firstString(json, "STKHASH", "stickerHash", "sticker_hash"),
           firstString(json, "CSSTKID", "combinationStickerId", "combination_sticker_id"));
-    } catch (Throwable ignored) {
-      return null;
-    }
-  }
-
-  private static NotificationMediaFileStore.Attachment acquireFromMessage(
-      Context context, Object message) {
-    try {
-      return attachmentFromFile(context, LineGlideMediaUtils.requestFile(context, message));
     } catch (Throwable ignored) {
       return null;
     }
@@ -170,10 +145,6 @@ final class LineStickerGlideMediaResolver {
       this.packageVersion = packageVersion;
       this.hash = hash;
       this.combinationStickerId = combinationStickerId;
-    }
-
-    boolean isEmojiLike() {
-      return packageId <= 0L || packageId == 5L;
     }
 
     boolean isArrangedSticker() {

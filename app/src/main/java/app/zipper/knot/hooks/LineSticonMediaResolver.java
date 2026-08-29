@@ -1,12 +1,24 @@
 package app.zipper.knot.hooks;
 
 import android.content.Context;
-import java.io.File;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Rect;
+import android.graphics.drawable.Drawable;
+import app.zipper.knot.LineVersion;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Locale;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 final class LineSticonMediaResolver {
+  private static final int DEFAULT_IMAGE_SIZE = 180;
+  private static final int MAX_IMAGE_SIZE = 512;
+
   private LineSticonMediaResolver() {}
 
   static NotificationMediaFileStore.Attachment acquire(
@@ -14,13 +26,130 @@ final class LineSticonMediaResolver {
     if (context == null || captured == null) return null;
     SticonSpec spec = parseSingleSticon(captured.text, captured.parameter);
     if (spec == null) return null;
-    String url = buildUrl(spec);
-    if (!hasText(url)) return null;
-    File file = LineGlideMediaUtils.requestFile(context, url);
-    if (file == null || !file.isFile() || file.length() <= 0L) return null;
-    String mimeType = LineGlideMediaUtils.sniffMime(file);
-    if (!LineGlideMediaUtils.isImage(mimeType)) return null;
-    return NotificationMediaFileStore.fromExistingFile(context, file, mimeType);
+
+    Drawable drawable = requestDrawableWithLine(context, spec);
+    if (drawable == null) return null;
+    Bitmap bitmap = renderDrawable(drawable);
+    if (bitmap == null) return null;
+    try {
+      return NotificationMediaFileStore.put(
+          context,
+          "sticon:" + spec.productId + ":" + spec.sticonId + ":" + spec.version,
+          bitmap,
+          "image/png");
+    } finally {
+      bitmap.recycle();
+    }
+  }
+
+  private static Drawable requestDrawableWithLine(Context context, SticonSpec spec) {
+    try {
+      LineVersion.Config version = LineVersion.get();
+      if (version == null) return null;
+      LineVersion.Config.Notification config = version.notification;
+      if (!hasText(config.sticonImageRepositoryClass)
+          || !hasText(config.sticonImageRepositoryFactoryField)
+          || !hasText(config.sticonImageRepositoryFactoryMethod)
+          || !hasText(config.sticonImageRepositoryCacheMethod)
+          || !hasText(config.sticonImageRepositoryBatchMethod)
+          || !hasText(config.sticonObservableBlockingFirstMethod)
+          || !hasText(config.sticonImageKeyClass)
+          || !hasText(config.sticonPaidProductClass)
+          || !hasText(config.sticonPaidClass)
+          || !hasText(config.sticonOptionTypeClass)) return null;
+
+      ClassLoader loader = context.getClassLoader();
+      Class<?> repositoryClass = Class.forName(config.sticonImageRepositoryClass, false, loader);
+      Field factoryField = repositoryClass.getField(config.sticonImageRepositoryFactoryField);
+      Object factory = factoryField.get(null);
+      if (factory == null) return null;
+      Object repository =
+          factory
+              .getClass()
+              .getMethod(config.sticonImageRepositoryFactoryMethod, Context.class)
+              .invoke(factory, context);
+      if (repository == null) return null;
+
+      Class<?> keyClass = Class.forName(config.sticonImageKeyClass, false, loader);
+      Object key = createImageKey(loader, config, spec, keyClass);
+      if (key == null) return null;
+
+      Method cacheMethod =
+          repositoryClass.getMethod(config.sticonImageRepositoryCacheMethod, keyClass);
+      Drawable cached = asDrawable(cacheMethod.invoke(repository, key));
+      if (cached != null) return cached;
+
+      Method batchMethod =
+          repositoryClass.getMethod(config.sticonImageRepositoryBatchMethod, Collection.class);
+      Object stream = batchMethod.invoke(repository, Collections.singleton(key));
+      if (stream == null) return null;
+      stream.getClass().getMethod(config.sticonObservableBlockingFirstMethod).invoke(stream);
+      return asDrawable(cacheMethod.invoke(repository, key));
+    } catch (Throwable ignored) {
+      return null;
+    }
+  }
+
+  private static Object createImageKey(
+      ClassLoader loader,
+      LineVersion.Config.Notification config,
+      SticonSpec spec,
+      Class<?> keyClass)
+      throws Exception {
+    Class<?> paidProductClass = Class.forName(config.sticonPaidProductClass, false, loader);
+    Object paidProduct = paidProductClass.getConstructor(String.class).newInstance(spec.productId);
+
+    Class<?> paidClass = Class.forName(config.sticonPaidClass, false, loader);
+    Object paid =
+        paidClass
+            .getConstructor(paidProductClass, String.class)
+            .newInstance(paidProduct, spec.sticonId);
+
+    Class<?> optionTypeClass = Class.forName(config.sticonOptionTypeClass, false, loader);
+    String optionName =
+        spec.resourceType.toUpperCase(Locale.ROOT).contains("ANIMATION") ? "ANIMATION" : "STATIC";
+    Object optionType = optionTypeClass.getField(optionName).get(null);
+    if (optionType == null) return null;
+
+    Class<?> sticonBaseClass = paidClass.getSuperclass();
+    if (sticonBaseClass == null) return null;
+    Constructor<?> constructor =
+        keyClass.getConstructor(sticonBaseClass, int.class, optionTypeClass, boolean.class);
+    return constructor.newInstance(paid, spec.version, optionType, false);
+  }
+
+  private static Drawable asDrawable(Object value) {
+    return value instanceof Drawable ? (Drawable) value : null;
+  }
+
+  private static Bitmap renderDrawable(Drawable source) {
+    int width = normalizedDimension(source.getIntrinsicWidth());
+    int height = normalizedDimension(source.getIntrinsicHeight());
+    Bitmap bitmap = null;
+    Rect oldBounds = new Rect(source.getBounds());
+    try {
+      bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+      Canvas canvas = new Canvas(bitmap);
+      synchronized (source) {
+        source.setBounds(0, 0, width, height);
+        source.draw(canvas);
+        source.setBounds(oldBounds);
+      }
+      return bitmap;
+    } catch (Throwable ignored) {
+      if (bitmap != null) bitmap.recycle();
+      return null;
+    } finally {
+      try {
+        source.setBounds(oldBounds);
+      } catch (Throwable ignored) {
+      }
+    }
+  }
+
+  private static int normalizedDimension(int value) {
+    if (value <= 0) return DEFAULT_IMAGE_SIZE;
+    return Math.min(value, MAX_IMAGE_SIZE);
   }
 
   private static SticonSpec parseSingleSticon(String text, String parameter) {
@@ -51,18 +180,6 @@ final class LineSticonMediaResolver {
     } catch (Throwable ignored) {
       return null;
     }
-  }
-
-  private static String buildUrl(SticonSpec spec) {
-    String base =
-        "https://stickershop.line-scdn.net/sticonshop/v1/sticon/"
-            + spec.productId
-            + "/iPhone/"
-            + spec.sticonId;
-    if (spec.resourceType.toUpperCase(Locale.ROOT).contains("ANIMATION")) {
-      return base + "_animation.png";
-    }
-    return base + ".png" + (spec.version > 0 ? "?v=" + spec.version : "");
   }
 
   private static boolean hasText(String value) {

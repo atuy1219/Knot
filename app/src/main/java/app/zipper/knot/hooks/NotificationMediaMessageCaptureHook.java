@@ -7,7 +7,6 @@ import app.zipper.knot.LoadParam;
 import app.zipper.knot.Reflect;
 import java.lang.reflect.Constructor;
 import java.util.Map;
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class NotificationMediaMessageCaptureHook implements BaseHook {
@@ -50,8 +49,6 @@ public class NotificationMediaMessageCaptureHook implements BaseHook {
     Object metadata = objectField(message, config.messageMetadataField);
     String parameter = metadataJson(metadata);
 
-    logMessageProbe(message, messageId, contentTypeName, metadata, parameter, config);
-
     int type;
     String text = null;
     Object retainedMessage = null;
@@ -69,112 +66,6 @@ public class NotificationMediaMessageCaptureHook implements BaseHook {
     }
 
     NotificationMediaCaptureStore.capture(messageId, type, text, parameter, retainedMessage);
-  }
-
-  private static void logMessageProbe(
-      Object message,
-      String messageId,
-      String contentTypeName,
-      Object metadata,
-      String parameter,
-      LineVersion.Config.Notification config) {
-    String stickerId = metadataString(metadata, "STKID");
-    String stickerPackageId = metadataString(metadata, "STKPKGID");
-    String stickerVersion = metadataString(metadata, "STKVER");
-    String stickerHash = metadataString(metadata, "STKHASH");
-    String stickerOption = metadataString(metadata, "STKOPT");
-    String combinationStickerId = metadataString(metadata, "CSSTKID");
-    String replace = metadataString(metadata, "REPLACE");
-    String sticon = sticonSummary(replace);
-    boolean hasSticon = sticon != null;
-
-    String kind;
-    boolean messageGlideCandidate = false;
-    if ("IMAGE".equals(contentTypeName)) {
-      kind = "IMAGE";
-    } else if ("STICKER".equals(contentTypeName)) {
-      LineStickerGlideMediaResolver.StickerMetadata sticker =
-          LineStickerGlideMediaResolver.parse(parameter);
-      messageGlideCandidate = sticker != null && sticker.isEmojiLike();
-      if (sticker != null && sticker.isArrangedSticker()) {
-        kind = "ARRANGED_STICKER";
-      } else {
-        kind = sticker != null && sticker.isEmojiLike() ? "EMOJI_LIKE_STICKER" : "STICKER";
-      }
-    } else if ("NONE".equals(contentTypeName) && hasSticon) {
-      kind = "STICON";
-    } else if ("NONE".equals(contentTypeName)) {
-      kind = "TEXT";
-    } else {
-      kind = "OTHER";
-    }
-
-    String text = stringField(message, config.messageTextField);
-    StringBuilder out =
-        new StringBuilder("[MediaProbe] kind=")
-            .append(kind)
-            .append(" messageId=")
-            .append(messageId)
-            .append(" contentType=")
-            .append(contentTypeName)
-            .append(" textLength=")
-            .append(text == null ? -1 : text.length())
-            .append(" STKID=")
-            .append(stickerId)
-            .append(" STKPKGID=")
-            .append(stickerPackageId)
-            .append(" STKVER=")
-            .append(stickerVersion)
-            .append(" CSSTKID=")
-            .append(combinationStickerId)
-            .append(" STKHASH=")
-            .append(stickerHash)
-            .append(" STKOPT=")
-            .append(stickerOption)
-            .append(" messageGlideCandidate=")
-            .append(messageGlideCandidate)
-            .append(" hasREPLACE=")
-            .append(hasText(replace))
-            .append(" hasSticon=")
-            .append(hasSticon)
-            .append(" metadataKeys=")
-            .append(metadataKeys(metadata));
-    if (hasSticon) out.append(' ').append(sticon);
-    Knot.log(out.toString());
-  }
-
-  private static String sticonSummary(String replace) {
-    if (!hasText(replace)) return null;
-    try {
-      JSONObject sticon = new JSONObject(replace).optJSONObject("sticon");
-      if (sticon == null) return null;
-      JSONArray resources = sticon.optJSONArray("resources");
-      if (resources == null || resources.length() == 0) return "sticonResources=0";
-      JSONObject resource = resources.optJSONObject(0);
-      if (resource == null) return "sticonResources=" + resources.length();
-      return "sticonResources="
-          + resources.length()
-          + " sticonProductId="
-          + resource.optString("productId", null)
-          + " sticonId="
-          + resource.optString("sticonId", null)
-          + " sticonVersion="
-          + resource.optInt("version", -1)
-          + " sticonResourceType="
-          + resource.optString("resourceType", null);
-    } catch (Throwable ignored) {
-      return null;
-    }
-  }
-
-  private static String metadataString(Object value, String key) {
-    if (!(value instanceof Map) || !hasText(key)) return null;
-    Object metadataValue = ((Map<?, ?>) value).get(key);
-    return metadataValue == null ? null : String.valueOf(metadataValue);
-  }
-
-  private static Object metadataKeys(Object value) {
-    return value instanceof Map ? ((Map<?, ?>) value).keySet() : "[]";
   }
 
   private static boolean hasMetadataValue(Object value, String key) {

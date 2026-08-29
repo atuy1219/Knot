@@ -7,7 +7,7 @@ import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.RectF;
-import app.zipper.knot.Knot;
+import app.zipper.knot.LineVersion;
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.File;
@@ -19,9 +19,10 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -33,8 +34,15 @@ final class LineCombinationStickerMediaResolver {
   private static final int MAX_METADATA_BYTES = 1024 * 1024;
   private static final int MAX_LAYOUTS = 16;
   private static final int MAX_CANVAS_DIMENSION = 768;
-  private static final String[] REPOSITORY_CLASSES = {"bj5.k", "dj5.k"};
-  private static final Map<String, String> metadataMemoryCache = new ConcurrentHashMap<>();
+  private static final int MAX_METADATA_CACHE_ENTRIES = 64;
+  private static final Map<String, String> metadataMemoryCache =
+      Collections.synchronizedMap(
+          new LinkedHashMap<String, String>(16, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+              return size() > MAX_METADATA_CACHE_ENTRIES;
+            }
+          });
 
   private static volatile ServiceHolder serviceHolder;
 
@@ -43,43 +51,11 @@ final class LineCombinationStickerMediaResolver {
   static NotificationMediaFileStore.Attachment acquire(
       Context context, LineStickerGlideMediaResolver.StickerMetadata metadata) {
     if (context == null || metadata == null || !metadata.isArrangedSticker()) return null;
-
-    String combinationId = metadata.combinationStickerId;
     try {
-      MetadataPayload payload = loadMetadata(context, combinationId);
-      if (payload == null) {
-        Knot.log("[ArrangedSticker] metadata failed CSSTKID=" + combinationId);
-        return null;
-      }
-
-      CombinationSpec spec = parseMetadata(payload.json);
-      if (spec == null) {
-        Knot.log(
-            "[ArrangedSticker] metadata invalid CSSTKID="
-                + combinationId
-                + " source="
-                + payload.source);
-        return null;
-      }
-
-      Knot.log(
-          "[ArrangedSticker] metadata success CSSTKID="
-              + combinationId
-              + " source="
-              + payload.source
-              + " canvas="
-              + spec.canvasWidth
-              + "x"
-              + spec.canvasHeight
-              + " layouts="
-              + spec.parts.size());
-      return compose(context, combinationId, spec);
-    } catch (Throwable t) {
-      Knot.log(
-          "[ArrangedSticker] compose error CSSTKID="
-              + combinationId
-              + " error="
-              + t.getClass().getSimpleName());
+      String json = loadMetadata(context, metadata.combinationStickerId);
+      CombinationSpec spec = parseMetadata(json);
+      return spec == null ? null : compose(context, metadata.combinationStickerId, spec);
+    } catch (Throwable ignored) {
       return null;
     }
   }
@@ -98,37 +74,15 @@ final class LineCombinationStickerMediaResolver {
       Canvas canvas = new Canvas(output);
       Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
 
-      for (int i = 0; i < spec.parts.size(); i++) {
-        PartSpec part = spec.parts.get(i);
+      for (PartSpec part : spec.parts) {
         LineStickerGlideMediaResolver.StickerMetadata sticker =
             new LineStickerGlideMediaResolver.StickerMetadata(
                 part.stickerId, part.productId, part.stickerVersion, part.stickerHash, null);
         File file = LineStickerGlideMediaResolver.requestStickerFile(context, sticker);
-        if (file == null || !file.isFile() || file.length() <= 0L) {
-          Knot.log(
-              "[ArrangedSticker] part failed CSSTKID="
-                  + combinationId
-                  + " index="
-                  + i
-                  + " STKID="
-                  + part.stickerId
-                  + " reason=file");
-          return null;
-        }
+        if (file == null || !file.isFile() || file.length() <= 0L) return null;
 
         Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
-        if (bitmap == null) {
-          Knot.log(
-              "[ArrangedSticker] part failed CSSTKID="
-                  + combinationId
-                  + " index="
-                  + i
-                  + " STKID="
-                  + part.stickerId
-                  + " reason=decode");
-          return null;
-        }
-
+        if (bitmap == null) return null;
         try {
           RectF source = new RectF(0.0f, 0.0f, bitmap.getWidth(), bitmap.getHeight());
           RectF destination =
@@ -146,48 +100,20 @@ final class LineCombinationStickerMediaResolver {
         } finally {
           bitmap.recycle();
         }
-
-        Knot.log(
-            "[ArrangedSticker] part success CSSTKID="
-                + combinationId
-                + " index="
-                + i
-                + " productId="
-                + part.productId
-                + " STKID="
-                + part.stickerId
-                + " STKOPT="
-                + part.stickerOptions);
       }
 
-      NotificationMediaFileStore.Attachment attachment =
-          NotificationMediaFileStore.put(
-              context, "combination-sticker:" + combinationId, output, "image/png");
-      Knot.log(
-          "[ArrangedSticker] compose "
-              + (attachment != null ? "success" : "failed")
-              + " CSSTKID="
-              + combinationId
-              + " output="
-              + width
-              + "x"
-              + height);
-      return attachment;
-    } catch (Throwable t) {
-      Knot.log(
-          "[ArrangedSticker] compose failed CSSTKID="
-              + combinationId
-              + " error="
-              + t.getClass().getSimpleName());
+      return NotificationMediaFileStore.put(
+          context, "combination-sticker:" + combinationId, output, "image/png");
+    } catch (Throwable ignored) {
       return null;
     } finally {
       if (output != null) output.recycle();
     }
   }
 
-  private static MetadataPayload loadMetadata(Context context, String combinationId) {
+  private static String loadMetadata(Context context, String combinationId) {
     String cached = metadataMemoryCache.get(combinationId);
-    if (hasText(cached)) return new MetadataPayload(cached, "memory");
+    if (hasText(cached)) return cached;
 
     File lineCache =
         new File(
@@ -196,34 +122,28 @@ final class LineCombinationStickerMediaResolver {
     String local = readText(lineCache);
     if (hasText(local)) {
       metadataMemoryCache.put(combinationId, local);
-      return new MetadataPayload(local, "line_cache");
+      return local;
     }
 
     String downloaded = requestMetadataWithLine(context, combinationId);
-    if (!hasText(downloaded)) return null;
-    metadataMemoryCache.put(combinationId, downloaded);
-    return new MetadataPayload(downloaded, "line_retrofit");
+    if (hasText(downloaded)) metadataMemoryCache.put(combinationId, downloaded);
+    return downloaded;
   }
 
   private static String requestMetadataWithLine(Context context, String combinationId) {
     Object response = null;
     try {
       ClassLoader loader = context.getClassLoader();
+      LineVersion.Config version = LineVersion.get();
+      if (version == null) return null;
+      LineVersion.Config.Notification config = version.notification;
       ServiceHolder holder = lineService(context, loader);
-      if (holder == null) return null;
+      if (holder == null || !hasText(config.combinationStickerMetadataMethod)) return null;
 
       Class<?> continuationClass = Class.forName("kotlin.coroutines.Continuation", false, loader);
-      Method request = null;
-      for (Method method : holder.apiClass.getMethods()) {
-        Class<?>[] parameters = method.getParameterTypes();
-        if (parameters.length == 2
-            && parameters[0] == String.class
-            && parameters[1] == continuationClass) {
-          request = method;
-          break;
-        }
-      }
-      if (request == null) return null;
+      Method request =
+          holder.apiClass.getMethod(
+              config.combinationStickerMetadataMethod, String.class, continuationClass);
 
       Object coroutineContext = emptyCoroutineContext(continuationClass, loader);
       if (coroutineContext == null) return null;
@@ -266,18 +186,13 @@ final class LineCombinationStickerMediaResolver {
         if (error != null) throw error;
         response = resumed.get();
       } else {
-        Knot.log("[ArrangedSticker] metadata timeout CSSTKID=" + combinationId);
         return null;
       }
 
-      if (response == null) return null;
-      return responseString(response);
-    } catch (Throwable t) {
-      Knot.log(
-          "[ArrangedSticker] metadata network failed CSSTKID="
-              + combinationId
-              + " error="
-              + t.getClass().getSimpleName());
+      return response == null
+          ? null
+          : responseString(response, config.combinationStickerResponseStringMethod);
+    } catch (Throwable ignored) {
       return null;
     } finally {
       if (response instanceof Closeable) {
@@ -296,24 +211,30 @@ final class LineCombinationStickerMediaResolver {
       existing = serviceHolder;
       if (existing != null) return existing;
 
-      for (String className : REPOSITORY_CLASSES) {
-        try {
-          Class<?> repositoryClass = Class.forName(className, false, loader);
-          Object repository = repositoryClass.getDeclaredConstructor().newInstance();
-          Method initialize = repositoryClass.getMethod("G", Context.class);
-          initialize.invoke(repository, context);
-          Field serviceField = repositoryClass.getDeclaredField("d");
-          serviceField.setAccessible(true);
-          Object service = serviceField.get(repository);
-          if (service == null) continue;
-          ServiceHolder resolved = new ServiceHolder(service, serviceField.getType());
-          serviceHolder = resolved;
-          Knot.log("[ArrangedSticker] LINE metadata service=" + className);
-          return resolved;
-        } catch (Throwable ignored) {
-        }
+      LineVersion.Config version = LineVersion.get();
+      if (version == null) return null;
+      LineVersion.Config.Notification config = version.notification;
+      String className = config.combinationStickerRepositoryClass;
+      if (!hasText(className)
+          || !hasText(config.combinationStickerInitializeMethod)
+          || !hasText(config.combinationStickerServiceField)) return null;
+      try {
+        Class<?> repositoryClass = Class.forName(className, false, loader);
+        Object repository = repositoryClass.getDeclaredConstructor().newInstance();
+        repositoryClass
+            .getMethod(config.combinationStickerInitializeMethod, Context.class)
+            .invoke(repository, context);
+        Field serviceField =
+            repositoryClass.getDeclaredField(config.combinationStickerServiceField);
+        serviceField.setAccessible(true);
+        Object service = serviceField.get(repository);
+        if (service == null) return null;
+        ServiceHolder resolved = new ServiceHolder(service, serviceField.getType());
+        serviceHolder = resolved;
+        return resolved;
+      } catch (Throwable ignored) {
+        return null;
       }
-      return null;
     }
   }
 
@@ -358,23 +279,15 @@ final class LineCombinationStickerMediaResolver {
     return value != null && "COROUTINE_SUSPENDED".equals(String.valueOf(value));
   }
 
-  private static String responseString(Object response) {
-    for (String name : new String[] {"g", "h"}) {
-      try {
-        Method method = response.getClass().getMethod(name);
-        if (method.getReturnType() == String.class) return (String) method.invoke(response);
-      } catch (Throwable ignored) {
-      }
+  private static String responseString(Object response, String methodName) {
+    if (response == null || !hasText(methodName)) return null;
+    try {
+      Method method = response.getClass().getMethod(methodName);
+      if (method.getParameterCount() != 0 || method.getReturnType() != String.class) return null;
+      return (String) method.invoke(response);
+    } catch (Throwable ignored) {
+      return null;
     }
-    for (Method method : response.getClass().getMethods()) {
-      if (method.getParameterCount() != 0 || method.getReturnType() != String.class) continue;
-      if ("toString".equals(method.getName())) continue;
-      try {
-        return (String) method.invoke(response);
-      } catch (Throwable ignored) {
-      }
-    }
-    return null;
   }
 
   private static CombinationSpec parseMetadata(String json) {
@@ -422,7 +335,6 @@ final class LineCombinationStickerMediaResolver {
                 stickerId,
                 stickerVersion,
                 nullableString(sticker, "stickerHash"),
-                sticker.optString("stickerOptions", ""),
                 x,
                 y,
                 width,
@@ -480,16 +392,6 @@ final class LineCombinationStickerMediaResolver {
     }
   }
 
-  private static final class MetadataPayload {
-    final String json;
-    final String source;
-
-    MetadataPayload(String json, String source) {
-      this.json = json;
-      this.source = source;
-    }
-  }
-
   private static final class CombinationSpec {
     final float canvasWidth;
     final float canvasHeight;
@@ -507,7 +409,6 @@ final class LineCombinationStickerMediaResolver {
     final long stickerId;
     final long stickerVersion;
     final String stickerHash;
-    final String stickerOptions;
     final float x;
     final float y;
     final float width;
@@ -519,7 +420,6 @@ final class LineCombinationStickerMediaResolver {
         long stickerId,
         long stickerVersion,
         String stickerHash,
-        String stickerOptions,
         float x,
         float y,
         float width,
@@ -529,7 +429,6 @@ final class LineCombinationStickerMediaResolver {
       this.stickerId = stickerId;
       this.stickerVersion = stickerVersion;
       this.stickerHash = stickerHash;
-      this.stickerOptions = stickerOptions;
       this.x = x;
       this.y = y;
       this.width = width;
