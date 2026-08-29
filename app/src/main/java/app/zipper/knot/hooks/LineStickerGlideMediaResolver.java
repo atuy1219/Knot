@@ -1,6 +1,7 @@
 package app.zipper.knot.hooks;
 
 import android.content.Context;
+import app.zipper.knot.Knot;
 import app.zipper.knot.LineVersion;
 import java.io.File;
 import java.lang.reflect.Method;
@@ -14,11 +15,33 @@ final class LineStickerGlideMediaResolver {
       NotificationMediaCaptureStore.MessageData captured,
       StickerMetadata metadata) {
     if (context == null || metadata == null) return null;
-    if (metadata.isEmojiLike() && captured != null && captured.decryptedMessage != null) {
-      NotificationMediaFileStore.Attachment direct =
-          acquireFromMessage(context, captured.decryptedMessage);
-      if (direct != null) return direct;
+
+    if (captured != null && captured.decryptedMessage != null) {
+      if (metadata.isArrangedSticker()) {
+        Knot.log(
+            "[ArrangedSticker] route=message_glide start CSSTKID="
+                + metadata.combinationStickerId
+                + " STKID="
+                + metadata.stickerId);
+        NotificationMediaFileStore.Attachment direct =
+            acquireFromMessage(context, captured.decryptedMessage);
+        if (direct != null) {
+          Knot.log(
+              "[ArrangedSticker] route=message_glide success CSSTKID="
+                  + metadata.combinationStickerId);
+          return direct;
+        }
+        Knot.log(
+            "[ArrangedSticker] route=message_glide failed CSSTKID="
+                + metadata.combinationStickerId
+                + " fallback=sticker_url");
+      } else if (metadata.isEmojiLike()) {
+        NotificationMediaFileStore.Attachment direct =
+            acquireFromMessage(context, captured.decryptedMessage);
+        if (direct != null) return direct;
+      }
     }
+
     if (metadata.packageId <= 0L) return null;
 
     LineVersion.Config version = LineVersion.get();
@@ -26,11 +49,42 @@ final class LineStickerGlideMediaResolver {
     LineVersion.Config.Notification config = version.notification;
     if (!hasText(config.stickerUrlBuilderClass)) return null;
     try {
+      if (metadata.isArrangedSticker()) {
+        Knot.log(
+            "[ArrangedSticker] route=sticker_url start CSSTKID="
+                + metadata.combinationStickerId
+                + " STKID="
+                + metadata.stickerId
+                + " STKHASH="
+                + metadata.hash);
+      }
       String url = buildLineStickerUrl(context, metadata, config);
-      if (!hasText(url) || !url.startsWith("https://")) return null;
+      if (!hasText(url) || !url.startsWith("https://")) {
+        if (metadata.isArrangedSticker()) {
+          Knot.log(
+              "[ArrangedSticker] route=sticker_url invalid CSSTKID="
+                  + metadata.combinationStickerId);
+        }
+        return null;
+      }
       File file = LineGlideMediaUtils.requestFile(context, url);
-      return attachmentFromFile(context, file);
-    } catch (Throwable ignored) {
+      NotificationMediaFileStore.Attachment attachment = attachmentFromFile(context, file);
+      if (metadata.isArrangedSticker()) {
+        Knot.log(
+            "[ArrangedSticker] route=sticker_url "
+                + (attachment != null ? "success" : "failed")
+                + " CSSTKID="
+                + metadata.combinationStickerId);
+      }
+      return attachment;
+    } catch (Throwable t) {
+      if (metadata.isArrangedSticker()) {
+        Knot.log(
+            "[ArrangedSticker] route=sticker_url error CSSTKID="
+                + metadata.combinationStickerId
+                + " error="
+                + t.getClass().getSimpleName());
+      }
       return null;
     }
   }
@@ -45,7 +99,8 @@ final class LineStickerGlideMediaResolver {
           stickerId,
           firstLong(json, "STKPKGID", "stickerPackageId", "sticker_package_id"),
           firstLong(json, "STKVER", "stickerPackageVer", "sticker_package_ver"),
-          firstString(json, "STKHASH", "stickerHash", "sticker_hash"));
+          firstString(json, "STKHASH", "stickerHash", "sticker_hash"),
+          firstString(json, "CSSTKID", "combinationStickerId", "combination_sticker_id"));
     } catch (Throwable ignored) {
       return null;
     }
@@ -129,16 +184,27 @@ final class LineStickerGlideMediaResolver {
     final long packageId;
     final long packageVersion;
     final String hash;
+    final String combinationStickerId;
 
-    StickerMetadata(long stickerId, long packageId, long packageVersion, String hash) {
+    StickerMetadata(
+        long stickerId,
+        long packageId,
+        long packageVersion,
+        String hash,
+        String combinationStickerId) {
       this.stickerId = stickerId;
       this.packageId = packageId;
       this.packageVersion = packageVersion;
       this.hash = hash;
+      this.combinationStickerId = combinationStickerId;
     }
 
     boolean isEmojiLike() {
       return packageId <= 0L || packageId == 5L;
+    }
+
+    boolean isArrangedSticker() {
+      return hasText(combinationStickerId);
     }
   }
 }
