@@ -1,39 +1,33 @@
-name: Build reviewed media preview
+name: Diagnose SDK 37
 on:
   push:
     branches: [build/media-preview-e242096]
 permissions:
   contents: read
 jobs:
-  build:
+  sdk:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-        with:
-          log-accepted-android-sdk-licenses: false
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '9.7.0'
-      - name: Install compile SDK
+      - name: Inspect official SDK repository
         run: |
-          if sdkmanager --channel=3 'platforms;android-37'; then
-            echo 'Built with original compileSdk 37' >> "$GITHUB_STEP_SUMMARY"
-          else
-            sdkmanager 'platforms;android-36'
-            sed -i 's/compileSdk 37/compileSdk 36/' app/build.gradle
-            echo 'Build-only fallback: compileSdk 37 -> 36; application sources and targetSdk unchanged' >> "$GITHUB_STEP_SUMMARY"
-          fi
-      - name: Build debug APK
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Knot-media-preview-e242096-debug
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+          curl -fsSL https://dl.google.com/android/repository/repository2-3.xml -o /tmp/sdk-repository.xml
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('/tmp/sdk-repository.xml').getroot()
+          for p in root.findall('remotePackage'):
+              path = p.get('path', '')
+              if path.startswith(('platforms;', 'cmdline-tools;')):
+                  print(path, ET.tostring(p, encoding='unicode')[:600])
+          PY
+      - name: Update SDK command-line tools
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'cmdline-tools;latest'
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list --channel=3
+      - name: Install SDK 37
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --channel=3 "platforms;android-37"'
