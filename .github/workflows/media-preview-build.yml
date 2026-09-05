@@ -1,0 +1,30 @@
+name: Build reviewed media preview
+on:
+  push:
+    branches: [build/media-preview-e242096]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.7.0'
+      - name: Install compile SDK
+        run: sdkmanager 'platforms;android-37'
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Knot-media-preview-e242096-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
