@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="opt_notification_media_preview_label">通知にメディアプレビューを表示</string>
+    <string name="opt_notification_media_preview_desc">画像・スタンプ・アレンジスタンプ・絵文字をメッセージ通知内にプレビュー表示します。</string>
+</resources>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="opt_notification_media_preview_label">在通知中顯示媒體預覽</string>
+    <string name="opt_notification_media_preview_desc">在訊息通知中預覽圖片、貼圖、排列貼圖與表情符號。</string>
+</resources>
