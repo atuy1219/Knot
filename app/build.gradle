@@ -6,6 +6,7 @@ plugins {
 android {
     namespace 'app.zipper.knot'
     compileSdk 37
+    compileSdkMinor 0
 
     defaultConfig {
         applicationId 'app.zipper.knot'

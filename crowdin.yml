@@ -7,3 +7,11 @@ files:
       two_letters_code:
         'zh-TW': 'b+zh+Hant'
         'zh-HK': 'b+zh+Hant'
+  - source: /app/src/main/res/values/notification_media_preview.xml
+    translation: /app/src/main/res/values-%two_letters_code%/notification_media_preview.xml
+    type: android
+    skip_untranslated_strings: true
+    languages_mapping:
+      two_letters_code:
+        'zh-TW': 'b+zh+Hant'
+        'zh-HK': 'b+zh+Hant'

@@ -201,6 +201,50 @@ public class Version26140 {
     v.notification.chatHistoryRequestClass = "com.linecorp.line.chat.request.ChatHistoryRequest";
     v.notification.chatHistoryActivityLaunchActivityClass =
         "jp.naver.line.android.activity.chathistory.ChatHistoryActivityLaunchActivity";
+    v.notification.decryptedResultClass = "jg8.b3$b$a";
+    v.notification.messageClass = "hi8.od";
+    v.notification.messageServerIdField = "d";
+    v.notification.messageContentTypeField = "j";
+    v.notification.messageTextField = "g";
+    v.notification.messageMetadataField = "k";
+    v.notification.chatImageSourceClass = "yr3.a";
+    v.notification.chatImageCopyInfoClass = "ze8.a";
+    v.notification.chatImageBridgeHolderClass = "tl3.i";
+    v.notification.chatImageBridgeGetterMethod = "c";
+    v.notification.chatImageRequestBuilderMethod = "k";
+    v.notification.glideClass = "com.bumptech.glide.c";
+    v.notification.glideWithContextMethod = "e";
+    v.notification.glideRetrieverMethod = "c";
+    v.notification.glideRetrieverGetMethod = "f";
+    v.notification.glideAsFileMethod = "k";
+    v.notification.glideLoadMethod = "b0";
+    v.notification.glideSubmitMethod = "g0";
+    v.notification.glideClearMethod = "n";
+    v.notification.stickerUrlBuilderClass = "tn5.p";
+    v.notification.stickerInitializeMethod = "E";
+    v.notification.stickerV2UrlMethod = "w";
+    v.notification.stickerVersionUrlMethod = "s";
+    v.notification.stickerPackageUrlMethod = "A";
+    v.notification.combinationStickerRepositoryClass = "fl5.k";
+    v.notification.combinationStickerInitializeMethod = "E";
+    v.notification.combinationStickerServiceField = "d";
+    v.notification.combinationStickerMetadataMethod = "a";
+    v.notification.combinationStickerResponseStringMethod = "g";
+    v.notification.combinationStickerEmptyCoroutineContextClass = "oi8.j";
+    v.notification.combinationStickerEmptyCoroutineContextField = "a";
+    v.notification.sticonImageRepositoryClass = "hc7.c";
+    v.notification.sticonImageRepositoryFactoryField = "a";
+    v.notification.sticonImageRepositoryFactoryMethod = "a";
+    v.notification.sticonImageRepositoryCacheMethod = "d";
+    v.notification.sticonImageRepositoryBatchMethod = "c";
+    v.notification.sticonObservableBlockingFirstMethod = "b";
+    v.notification.sticonImageKeyClass = "qo5.j";
+    v.notification.sticonPaidProductClass = "qo5.s$b";
+    v.notification.sticonPaidClass = "qo5.d$d";
+    v.notification.sticonOptionTypeClass = "qo5.l";
+    v.notification.fileProviderHelperClass =
+        "jp.naver.line.android.common.LineCommonFileProvider$a";
+    v.notification.fileProviderUriMethod = "d";
 
     v.notificationFix.lineFcmServiceClass =
         "jp.naver.line.android.service.fcm.LineFirebaseMessagingService";

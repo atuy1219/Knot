@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="opt_notification_media_preview_label">Show media previews in notifications</string>
+    <string name="opt_notification_media_preview_desc">Preview images, stickers, arranged stickers, and emoji in message notifications.</string>
+</resources>
