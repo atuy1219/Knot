@@ -15,11 +15,20 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        with:
+          log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.7.0'
       - name: Install compile SDK
-        run: sdkmanager 'platforms;android-37'
+        run: |
+          if sdkmanager --channel=3 'platforms;android-37'; then
+            echo 'Built with original compileSdk 37' >> "$GITHUB_STEP_SUMMARY"
+          else
+            sdkmanager 'platforms;android-36'
+            sed -i 's/compileSdk 37/compileSdk 36/' app/build.gradle
+            echo 'Build-only fallback: compileSdk 37 -> 36; application sources and targetSdk unchanged' >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon --stacktrace
       - name: Upload APK
