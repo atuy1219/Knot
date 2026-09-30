@@ -1,0 +1,48 @@
+name: メディアプレビューAPKビルド
+on:
+  push:
+    branches: [debug/media-preview, build/media-preview-apk]
+concurrency:
+  group: media-preview-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.7.0'
+      - name: Install SDK 37.0
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0"'
+      - name: Verify PR application sources
+        if: github.ref == 'refs/heads/build/media-preview-apk'
+        run: |
+          git fetch origin feature/media-notification-preview
+          git diff --exit-code FETCH_HEAD HEAD -- app
+      - name: Record source commit
+        run: |
+          git rev-parse HEAD > build-provenance.txt
+          echo 'Android SDK 37.0; media preview; no source substitutions' >> build-provenance.txt
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify APK and unchanged sources
+        run: |
+          git diff --exit-code HEAD
+          signer=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          "$signer" verify --verbose app/build/outputs/apk/debug/app-debug.apk
+          sha256sum app/build/outputs/apk/debug/app-debug.apk >> build-provenance.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.ref_name == 'debug/media-preview' && 'Knot-media-preview-debug' || 'Knot-media-preview-pr' }}
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            build-provenance.txt
+          if-no-files-found: error
