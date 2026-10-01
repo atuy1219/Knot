@@ -58,9 +58,25 @@ final class LineSticonMediaResolver {
       Context context, Lookup lookup) {
     String cacheKey = String.valueOf(lookup.key);
     NotificationMediaFileStore.Attachment stored = storedAttachment(context, cacheKey);
-    if (stored != null) return stored;
+    if (stored != null) {
+      traceStoredGeometry(lookup, cacheKey);
+      return stored;
+    }
     Drawable drawable = cachedDrawable(lookup);
     return drawable == null ? null : saveAttachment(context, cacheKey, drawable);
+  }
+
+  private static void traceStoredGeometry(Lookup lookup, String cacheKey) {
+    Drawable drawable = cachedDrawable(lookup);
+    if (drawable == null) {
+      Knot.log(
+          "Knot: sticon GEOMETRY key="
+              + cacheKey
+              + " stored=true nativeDrawable=unavailable");
+      return;
+    }
+    Bitmap bitmap = renderDrawable(cacheKey, drawable);
+    if (bitmap != null) bitmap.recycle();
   }
 
   static void registerCacheReady(
@@ -234,7 +250,7 @@ final class LineSticonMediaResolver {
     synchronized (renderLock) {
       NotificationMediaFileStore.Attachment stored = storedAttachment(context, cacheKey);
       if (stored != null) return stored;
-      Bitmap bitmap = renderDrawable(drawable);
+      Bitmap bitmap = renderDrawable(cacheKey, drawable);
       if (bitmap == null) return null;
       try {
         return NotificationMediaFileStore.put(
@@ -349,7 +365,7 @@ final class LineSticonMediaResolver {
     return value instanceof Drawable ? (Drawable) value : null;
   }
 
-  private static Bitmap renderDrawable(Drawable source) {
+  private static Bitmap renderDrawable(String cacheKey, Drawable source) {
     Bitmap bitmap = null;
     try {
       Drawable.ConstantState state = source.getConstantState();
@@ -376,11 +392,89 @@ final class LineSticonMediaResolver {
 
       drawable.setBounds(left, top, left + width, top + height);
       drawable.draw(canvas);
+      logRenderedGeometry(
+          cacheKey, drawable, bitmap, intrinsicWidth, intrinsicHeight, left, top, width, height);
       return bitmap;
-    } catch (Throwable ignored) {
+    } catch (Throwable t) {
+      Knot.log(
+          "Knot: sticon GEOMETRY failed key="
+              + cacheKey
+              + " error="
+              + t.getClass().getSimpleName());
       if (bitmap != null) bitmap.recycle();
       return null;
     }
+  }
+
+  private static void logRenderedGeometry(
+      String cacheKey,
+      Drawable drawable,
+      Bitmap bitmap,
+      int intrinsicWidth,
+      int intrinsicHeight,
+      int drawLeft,
+      int drawTop,
+      int drawWidth,
+      int drawHeight) {
+    int bitmapWidth = bitmap.getWidth();
+    int bitmapHeight = bitmap.getHeight();
+    int[] pixels = new int[bitmapWidth * bitmapHeight];
+    bitmap.getPixels(pixels, 0, bitmapWidth, 0, 0, bitmapWidth, bitmapHeight);
+
+    int minX = bitmapWidth;
+    int minY = bitmapHeight;
+    int maxX = -1;
+    int maxY = -1;
+    int visiblePixels = 0;
+    for (int y = 0; y < bitmapHeight; y++) {
+      int row = y * bitmapWidth;
+      for (int x = 0; x < bitmapWidth; x++) {
+        if ((pixels[row + x] >>> 24) == 0) continue;
+        visiblePixels++;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+
+    String alphaBounds;
+    String alphaSize;
+    if (maxX < minX || maxY < minY) {
+      alphaBounds = "empty";
+      alphaSize = "0x0";
+    } else {
+      alphaBounds = minX + "," + minY + "-" + maxX + "," + maxY;
+      alphaSize = (maxX - minX + 1) + "x" + (maxY - minY + 1);
+    }
+
+    Knot.log(
+        "Knot: sticon GEOMETRY key="
+            + cacheKey
+            + " drawable="
+            + drawable.getClass().getName()
+            + " intrinsic="
+            + intrinsicWidth
+            + "x"
+            + intrinsicHeight
+            + " canvas="
+            + bitmapWidth
+            + "x"
+            + bitmapHeight
+            + " drawBounds="
+            + drawLeft
+            + ","
+            + drawTop
+            + "+"
+            + drawWidth
+            + "x"
+            + drawHeight
+            + " alphaBounds="
+            + alphaBounds
+            + " alphaSize="
+            + alphaSize
+            + " visiblePixels="
+            + visiblePixels);
   }
 
   private static SticonSpec parseSingleSticon(String text, String parameter) {
