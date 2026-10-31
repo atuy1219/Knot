@@ -66,6 +66,18 @@ final class ThemeRules {
       c.theme.valueClass = value;
       c.theme.imageClass = image;
       c.theme.colorClass = color;
+      // Preserve the existing value's other seven slots in Mini; field names are R8-dependent.
+      StringBuilder names = new StringBuilder();
+      for (int i = 0; i < types.size(); i++) {
+        String field = f.ctorField(value, i, types.get(i));
+        if (field.isEmpty()) {
+          names.setLength(0);
+          break;
+        }
+        if (i > 0) names.append(',');
+        names.append(field);
+      }
+      c.theme.valueFields = names.toString();
       break;
     }
   }

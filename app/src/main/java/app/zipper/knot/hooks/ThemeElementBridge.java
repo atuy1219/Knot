@@ -111,7 +111,8 @@ final class ThemeElementBridge {
                             colorConstructor,
                             valueConstructor,
                             color,
-                            slot);
+                            slot,
+                            mapping.valueFields);
                   } else {
                     themeValue = createThemeValue(colorConstructor, valueConstructor, color, slot);
                   }
@@ -182,14 +183,16 @@ final class ThemeElementBridge {
       Constructor<?> colorConstructor,
       Constructor<?> valueConstructor,
       int color,
-      ColorSlot slot)
+      ColorSlot slot,
+      String fieldNames)
       throws Throwable {
     if (existing == null || !valueClass.isInstance(existing)) {
       return createThemeValue(colorConstructor, valueConstructor, color, slot);
     }
 
     Object[] args = new Object[8];
-    String[] fields = {"a", "b", "c", "d", "e", "f", "g", "h"};
+    String[] fields = fieldNames == null ? new String[0] : fieldNames.split(",");
+    if (fields.length != 8) return existing;
     for (int i = 0; i < fields.length; i++) {
       args[i] = Reflect.getObjectField(existing, fields[i]);
     }

@@ -86,6 +86,7 @@ public class LineVersion {
       public String valueClass = "";
       public String imageClass = "";
       public String colorClass = "";
+      public String valueFields = "";
       public String miniRootClass = "";
       public String methodMiniRoot = "";
     }
