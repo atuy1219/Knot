@@ -267,4 +267,6 @@
     <string name="main_row_settings_desc">LINEのホーム画面の歯車アイコンを長押しします</string>
     <string name="main_open_line">LINEを開く</string>
     <string name="main_line_not_installed">LINEがインストールされていません</string>
+    <string name="opt_extend_theme_label">着せかえの適用範囲を拡張</string>
+    <string name="opt_extend_theme_desc">通常の着せかえが反映されないホームやMiniなどのUIにも、現在の着せかえの色を補完して適用します。対応するLINEバージョンが必要です。</string>
 </resources>

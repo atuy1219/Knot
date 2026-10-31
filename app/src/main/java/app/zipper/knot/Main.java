@@ -206,6 +206,9 @@ public class Main extends XposedModule {
       applyHook(new HomeTabTypeHook(), lpparam);
     }
     if (options.useCustomFont.enabled) applyHook(new FontUnlockHook(), lpparam);
+    if (options.extendTheme.enabled && !options.useAmoledTheme.enabled) {
+      applyHook(new ThemeExtendHook(), lpparam);
+    }
     if (options.useAmoledTheme.enabled) applyHook(new AmoledThemeHook(), lpparam);
     if (options.forceDarkModeUi.enabled) applyHook(new ForceDarkModeUiHook(), lpparam);
     if (options.showThemeOnSubDevice.enabled) applyHook(new ShowThemeOnSubDeviceHook(), lpparam);

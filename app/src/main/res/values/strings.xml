@@ -314,4 +314,6 @@
     <string name="main_row_settings_desc">Long-press the gear icon on LINE\'s Home screen</string>
     <string name="main_open_line">Open LINE</string>
     <string name="main_line_not_installed">LINE is not installed</string>
+    <string name="opt_extend_theme_label">Extend theme coverage</string>
+    <string name="opt_extend_theme_desc">Apply colors from the current LINE theme to additional interface elements, such as Home and Mini, where the theme is not normally applied. Requires a compatible LINE version.</string>
 </resources>
