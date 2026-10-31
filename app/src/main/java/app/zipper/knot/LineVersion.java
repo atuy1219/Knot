@@ -72,6 +72,23 @@ public class LineVersion {
     public Message message = new Message();
     public KeywordAssist keywordAssist = new KeywordAssist();
     public PermanentHideChat permanentHideChat = new PermanentHideChat();
+    public Theme theme = new Theme();
+
+    // Resolved from LINE's DEX, not bound to an application version.
+    public static class Theme {
+      public String readerClass = "";
+      public String methodReadThemeJson = "";
+      public String keyClass = "";
+      public String keyComponentField = "";
+      public String keyElementField = "";
+      public String resolverClass = "";
+      public String methodResolveElements = "";
+      public String valueClass = "";
+      public String imageClass = "";
+      public String colorClass = "";
+      public String miniRootClass = "";
+      public String methodMiniRoot = "";
+    }
 
     public static class KeywordAssist {
       @Since("26.15.0")

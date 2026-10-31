@@ -3,6 +3,7 @@ package app.zipper.knot.hooks;
 import android.content.res.ColorStateList;
 import app.zipper.knot.Knot;
 import app.zipper.knot.LoadParam;
+import app.zipper.knot.LineVersion;
 import app.zipper.knot.Reflect;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -13,7 +14,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BooleanSupplier;
 
-final class ThemeElementBridge26130 {
+final class ThemeElementBridge {
 
   interface Resolver {
     Integer resolve(String component, String element);
@@ -33,17 +34,18 @@ final class ThemeElementBridge26130 {
   private static final Set<String> MINI_OVERRIDDEN = ConcurrentHashMap.newKeySet();
   private static volatile boolean installed;
 
-  private ThemeElementBridge26130() {}
+  private ThemeElementBridge() {}
 
   static synchronized void install(
-      BooleanSupplier active, Resolver resolver, LoadParam lpparam, String tag) throws Throwable {
+      LineVersion.Config.Theme mapping, BooleanSupplier active, Resolver resolver,
+      LoadParam lpparam, String tag) throws Throwable {
     if (installed) return;
 
     ClassLoader cl = lpparam.classLoader;
-    Class<?> keyClass = Reflect.findClass("m76.g", cl);
-    Class<?> valueClass = Reflect.findClass("m76.j", cl);
-    Class<?> colorClass = Reflect.findClass("m76.d", cl);
-    Class<?> imageClass = Reflect.findClass("m76.f", cl);
+    Class<?> keyClass = Reflect.findClass(mapping.keyClass, cl);
+    Class<?> valueClass = Reflect.findClass(mapping.valueClass, cl);
+    Class<?> colorClass = Reflect.findClass(mapping.colorClass, cl);
+    Class<?> imageClass = Reflect.findClass(mapping.imageClass, cl);
 
     Constructor<?> colorConstructor =
         Reflect.findConstructorExact(colorClass, ColorStateList.class);
@@ -59,7 +61,7 @@ final class ThemeElementBridge26130 {
             colorClass,
             colorClass);
     Method themeResolver =
-        Reflect.findMethodExact("o76.d", cl, "b", Map.class, Set.class);
+        Reflect.findMethodExact(mapping.resolverClass, cl, mapping.methodResolveElements, Map.class, Set.class);
 
     Knot.module
         .hook(themeResolver)
@@ -79,7 +81,7 @@ final class ThemeElementBridge26130 {
               Set requested = (Set) setArg;
               @SuppressWarnings("rawtypes")
               Map extended = null;
-              boolean miniOverride = MiniColorBridge26130.isMiniActive();
+              boolean miniOverride = MiniThemeScope.isMiniActive();
 
               for (Object key : requested) {
                 if (key == null || !keyClass.isInstance(key)) continue;
@@ -87,8 +89,8 @@ final class ThemeElementBridge26130 {
                 if (exists && !miniOverride) continue;
 
                 try {
-                  String component = (String) Reflect.getObjectField(key, "a");
-                  String element = (String) Reflect.getObjectField(key, "b");
+                  String component = (String) Reflect.getObjectField(key, mapping.keyComponentField);
+                  String element = (String) Reflect.getObjectField(key, mapping.keyElementField);
                   Integer color = resolver.resolve(component, element);
                   ColorSlot slot = resolveSlot(element);
                   String identity = identity(component, element);
@@ -149,17 +151,17 @@ final class ThemeElementBridge26130 {
               return chain.proceed(args);
             });
 
-    MiniColorBridge26130.install(active, token -> resolver.resolve(null, token), lpparam, tag);
+    MiniThemeScope.install(mapping, lpparam, tag);
 
     installed = true;
-    Knot.log(tag + ": installed LINE 26.13.0 ThemeManager element bridge");
+    Knot.log(tag + ": installed automatic ThemeManager element bridge");
   }
 
   static void resetProbe() {
     LOGGED.clear();
     UNMAPPED.clear();
     MINI_OVERRIDDEN.clear();
-    MiniColorBridge26130.resetProbe();
+    MiniThemeScope.resetProbe();
   }
 
   private static Object createThemeValue(

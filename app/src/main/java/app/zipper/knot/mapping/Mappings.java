@@ -107,7 +107,8 @@ public final class Mappings {
       NotificationRules.SECTIONS,
       HideChatRules.SECTIONS,
       MessageRules.SECTIONS,
-      MediaRules.SECTIONS
+      MediaRules.SECTIONS,
+      ThemeRules.SECTIONS
     };
     // Lookups come back empty while planning; the pass only gathers classUsing strings to batch
     Finder plan = f.planner();

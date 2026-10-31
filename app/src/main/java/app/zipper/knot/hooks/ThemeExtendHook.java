@@ -1,14 +1,13 @@
 package app.zipper.knot.hooks;
 
 import android.graphics.Color;
-import android.util.DisplayMetrics;
+import java.io.File;
 import app.zipper.knot.Knot;
 import app.zipper.knot.KnotConfig;
 import app.zipper.knot.LineVersion;
 import app.zipper.knot.LoadParam;
 import app.zipper.knot.Main;
 import app.zipper.knot.Reflect;
-import app.zipper.knot.SettingsStore;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.Locale;
@@ -24,14 +23,17 @@ public class ThemeExtendHook implements BaseHook {
   public void hook(KnotConfig config, LoadParam lpparam) throws Throwable {
     if (!config.extendTheme.enabled || config.useAmoledTheme.enabled) return;
 
-    String versionName = LineVersion.getVersionName(SettingsStore.getContext());
-    ThemeExtendVersion.Config version = ThemeExtendVersion.resolve(versionName);
-    if (version == null) {
-      Knot.log(TAG + ": unsupported LINE version " + versionName);
+    LineVersion.Config mapping = LineVersion.get();
+    if (mapping == null) {
+      Knot.log(TAG + ": automatic mapping not ready");
       return;
     }
-
-    installThemeParser(version, lpparam);
+    LineVersion.Config.Theme theme = mapping.theme;
+    if (has(theme.readerClass, theme.methodReadThemeJson)) {
+      installThemeJsonReader(theme, lpparam);
+    } else {
+      Knot.log(TAG + ": theme JSON reader was not found");
+    }
     SemanticColorBridge.install(
         ThemeExtendHook::enabled,
         token -> {
@@ -40,56 +42,44 @@ public class ThemeExtendHook implements BaseHook {
         },
         TAG,
         true);
-    if (versionName.startsWith("26.11.0")) {
-      ThemeElementBridge26110.install(
-          ThemeExtendHook::enabled, ThemeExtendHook::resolveThemeElementColor, lpparam, TAG);
-    } else if (versionName.startsWith("26.13.0")) {
-      ThemeElementBridge26130.install(
-          ThemeExtendHook::enabled, ThemeExtendHook::resolveThemeElementColor, lpparam, TAG);
+    if (has(theme.keyClass, theme.keyComponentField, theme.keyElementField,
+        theme.resolverClass, theme.methodResolveElements, theme.valueClass,
+        theme.imageClass, theme.colorClass)) {
+      ThemeElementBridge.install(
+          theme, ThemeExtendHook::enabled, ThemeExtendHook::resolveThemeElementColor, lpparam, TAG);
+    } else {
+      Knot.log(TAG + ": theme element resolver not available");
     }
-    Knot.log(TAG + ": installed semantic resource bridge for LINE " + versionName);
+    Knot.log(TAG + ": automatic theme mapping initialized");
   }
 
-  private static void installThemeParser(ThemeExtendVersion.Config version, LoadParam lpparam) {
-    Method parser =
-        Reflect.findMethodExact(
-            version.parserClass,
-            lpparam.classLoader,
-            version.parserMethod,
-            String.class,
-            version.parserConfigClass,
-            DisplayMetrics.class);
+  private static boolean has(String... values) {
+    for (String value : values) if (value == null || value.isEmpty()) return false;
+    return true;
+  }
 
-    Knot.module
-        .hook(parser)
-        .intercept(
-            chain -> {
-              Object result = chain.proceed();
-              if (!enabled()) return result;
-
-              Palette parsed = parsePalette((String) chain.getArg(0));
-              if (parsed != null) {
-                palette = parsed;
-                SemanticColorBridge.resetProbe(TAG);
-                ThemeElementBridge26110.resetProbe();
-                ThemeElementBridge26130.resetProbe();
-                Knot.log(
-                    TAG
-                        + ": palette semantic="
-                        + parsed.semantic.size()
-                        + " background="
-                        + hex(parsed.background)
-                        + " mainText="
-                        + hex(parsed.mainText)
-                        + " subText="
-                        + hex(parsed.messageText)
-                        + " divider="
-                        + hex(parsed.divider)
-                        + " icon="
-                        + hex(parsed.icon));
-              }
-              return result;
-            });
+  // The theme manager calls the File -> String reader when loading theme.json/theme-dark.json.
+  // Observe the original result so the parser itself stays unmodified.
+  private static void installThemeJsonReader(LineVersion.Config.Theme theme, LoadParam lpparam) {
+    Method reader = Reflect.findMethodExact(
+        theme.readerClass, lpparam.classLoader, theme.methodReadThemeJson, File.class);
+    Knot.module.hook(reader).intercept(chain -> {
+      Object result = chain.proceed();
+      if (!enabled() || !(result instanceof String)) return result;
+      Object file = chain.getArg(0);
+      if (!(file instanceof File)) return result;
+      String name = ((File) file).getName();
+      if (!"theme.json".equals(name) && !"theme-dark.json".equals(name)) return result;
+      Palette parsed = parsePalette((String) result);
+      if (parsed != null) {
+        palette = parsed;
+        SemanticColorBridge.resetProbe(TAG);
+        ThemeElementBridge.resetProbe();
+        Knot.log(TAG + ": active theme palette loaded from " + name
+            + " (" + parsed.semantic.size() + " semantic colors)");
+      }
+      return result;
+    });
   }
 
   private static boolean enabled() {
